@@ -30,7 +30,7 @@ def health():
 
 @app.get("/smoke")
 def smoke():
-    """Phase-1 only: proves ANTHROPIC_API_KEY + tool runner work. Remove in Phase 2."""
+    """Phase-1 only: proves GEMINI_API_KEY + function-calling loop work. Remove in Phase 2."""
     from .agents.orchestrator import smoke_test
     try:
         return {"ok": True, "response": smoke_test()}

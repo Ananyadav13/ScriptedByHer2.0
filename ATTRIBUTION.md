@@ -12,7 +12,7 @@ Format: Name — Version — License — Role — Source.
 | SQLAlchemy | 2.0.36 | MIT | ORM / SQLite access | https://github.com/sqlalchemy/sqlalchemy |
 | Pydantic | 2.10.4 | MIT | Schemas / structured outputs | https://github.com/pydantic/pydantic |
 | pydantic-settings | 2.7.1 | MIT | Env/config loading | https://github.com/pydantic/pydantic-settings |
-| anthropic | 0.42.0 | MIT | Claude API SDK (agent loop, vision, clustering) | https://github.com/anthropics/anthropic-sdk-python |
+| google-genai | 2.11.0 | Apache-2.0 | Gemini API SDK (agent loop, vision, clustering) | https://github.com/googleapis/python-genai |
 | python-dotenv | 1.0.1 | BSD-3-Clause | .env loading | https://github.com/theskumar/python-dotenv |
 | Faker | 33.1.0 | MIT | Synthetic seed data | https://github.com/joke2k/faker |
 | Pillow | 11.1.0 | MIT-CMU | Image handling (perceptual hash) | https://github.com/python-pillow/Pillow |
@@ -35,4 +35,4 @@ _shadcn/ui components added in Phase 5 — will be recorded then._
 
 ## Models
 
-- **Claude (Anthropic)** — `claude-opus-4-8` — used at runtime for the agent orchestration, vision review analysis, and review clustering. Commercial API, not open-source; listed for transparency.
+- **Gemini (Google)** — `gemini-3-flash-preview` — used at runtime for the agent orchestration, vision review analysis, and review clustering. Commercial API, not open-source; listed for transparency.

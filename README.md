@@ -14,7 +14,7 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate          # Windows;  source .venv/bin/activate on macOS/Linux
 pip install -r requirements.txt
-copy .env.example .env          # then put your ANTHROPIC_API_KEY in .env
+copy .env.example .env          # then put your GEMINI_API_KEY in .env
 uvicorn app.main:app --port 8000
 ```
 
@@ -29,7 +29,7 @@ The database is SQLite, seeded automatically on backend startup with 8 demo prod
 
 ## Architecture
 
-See [PLAN.md](PLAN.md) §1. Backend: FastAPI + SQLAlchemy + the Anthropic SDK tool-runner agent loop. Frontend: Next.js (App Router). Live agent trace streams over Server-Sent Events.
+See [PLAN.md](PLAN.md) §1. Backend: FastAPI + SQLAlchemy + a `google-genai` (Gemini) function-calling agent loop. Frontend: Next.js (App Router). Live agent trace streams over Server-Sent Events.
 
 ## Attribution
 

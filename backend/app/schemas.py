@@ -2,7 +2,7 @@
 from pydantic import BaseModel
 
 
-# ---- Agent 1 verdict (Phase 2 uses via messages.parse) ----
+# ---- Agent 1 verdict (Phase 2 uses via Gemini response_schema -> response.parsed) ----
 class Verdict(BaseModel):
     decision: str          # authentic | counterfeit_lock | refund_fast_track | manual_review | standard_process | cleared
     confidence: float
