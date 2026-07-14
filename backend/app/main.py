@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import products
+from .routers import events, investigations, products
 from .seed import reset_and_seed
 
 app = FastAPI(title="Build Trust API")
@@ -16,6 +16,8 @@ app.add_middleware(
 )
 
 app.include_router(products.router)
+app.include_router(investigations.router)
+app.include_router(events.router)
 
 
 @app.on_event("startup")
@@ -26,13 +28,3 @@ def _startup():
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-@app.get("/smoke")
-def smoke():
-    """Phase-1 only: proves GEMINI_API_KEY + function-calling loop work. Remove in Phase 2."""
-    from .agents.orchestrator import smoke_test
-    try:
-        return {"ok": True, "response": smoke_test()}
-    except Exception as e:  # noqa: BLE001
-        return {"ok": False, "error": str(e)}
