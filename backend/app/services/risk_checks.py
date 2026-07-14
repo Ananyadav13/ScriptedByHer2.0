@@ -16,12 +16,20 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime
 
-# ---- thresholds (single source of truth; Phase 4 tests pin these) ----
-PRICE_BELOW_MRP_RATIO = 0.35      # price < 35% of MRP on a branded item -> suspicious
-NEW_ACCOUNT_AGE_DAYS = 30         # "brand new" reviewer account
-BURST_MIN_PEAK = 8                # >= this many reviews on one day = a spike
-BURST_NEW_SHARE = 0.5             # AND >= this share from new accounts -> fake-burst flag
-SERIAL_CLAIM_COUNT = 5            # claim_history count >= this -> serial claimer
+from .rules import (
+    BURST_MIN_PEAK,
+    BURST_NEW_SHARE,
+    HUB_ESCALATE_CASE_COUNT,
+    MIN_TRUSTWORTHY_REVIEWS,
+    NEW_ACCOUNT_AGE_DAYS,
+    PRICE_BELOW_MRP_RATIO,
+    RECENT_REVIEW_WEIGHT,
+    RECENT_REVIEW_WINDOW_DAYS,
+    REFUND_MIN_SIGNALS,
+    REPEAT_CASE_COUNT,
+    SERIAL_CLAIM_COUNT,
+    OLD_REVIEW_WEIGHT,
+)
 
 
 def price_mrp_risk(product) -> dict:
@@ -97,21 +105,69 @@ def review_burst_risk(product) -> dict:
     }
 
 
+def trustworthy_rating(product) -> dict:
+    """The ONLY satisfaction measure used for decisions.
+
+    Recency-weighted average rating that DISCOUNTS the manipulable cluster
+    (reviews from brand-new accounts) to zero — so fake 5-star bursts can't buy
+    a good score, and genuine buyers of a cheap knockoff can still vouch for it.
+    """
+    reviews = list(product.reviews)
+    now = datetime.utcnow()
+    weighted_sum = 0.0
+    weight_total = 0.0
+    counted = 0
+    for r in reviews:
+        if r.reviewer_account_age_days < NEW_ACCOUNT_AGE_DAYS:
+            continue  # discount fake/new-account cluster entirely
+        age_days = (now - r.created_at).days
+        w = RECENT_REVIEW_WEIGHT if age_days <= RECENT_REVIEW_WINDOW_DAYS else OLD_REVIEW_WEIGHT
+        weighted_sum += r.rating * w
+        weight_total += w
+        counted += 1
+
+    if counted < MIN_TRUSTWORTHY_REVIEWS:
+        return {
+            "trustworthy_rating": None,
+            "trustworthy_review_count": counted,
+            "sufficient": False,
+            "reason": (
+                f"only {counted} review(s) from established accounts "
+                f"(need >= {MIN_TRUSTWORTHY_REVIEWS}) -> no genuine satisfaction signal"
+            ),
+        }
+    rating = round(weighted_sum / weight_total, 2)
+    return {
+        "trustworthy_rating": rating,
+        "trustworthy_review_count": counted,
+        "sufficient": True,
+        "reason": (
+            f"recency-weighted rating {rating} over {counted} established-account "
+            f"reviews (new-account reviews discounted)"
+        ),
+    }
+
+
 def seller_profile(seller) -> dict:
-    """Seller trust snapshot."""
+    """Seller trust snapshot, including repeat-offender case count."""
     age_days = (datetime.utcnow() - seller.account_created_at).days
     flags = list(seller.trust_flags or [])
     new_account = age_days < 90 or "new_account_cluster" in flags
+    repeat_offender = (seller.case_count or 0) >= REPEAT_CASE_COUNT
     return {
         "seller_id": seller.id,
         "name": seller.name,
         "rating": seller.rating,
         "account_age_days": age_days,
         "trust_flags": flags,
+        "case_count": seller.case_count or 0,
+        "repeat_offender": repeat_offender,
+        "already_banned": bool(seller.banned),
         "classification": "suspicious_new" if new_account else "established",
-        "flag": new_account or bool(flags),
+        "flag": new_account or bool(flags) or repeat_offender,
         "reason": (
-            f"account {age_days}d old; flags={flags or 'none'}"
+            f"account {age_days}d old; rating {seller.rating}; "
+            f"cases={seller.case_count or 0} (repeat={repeat_offender}); flags={flags or 'none'}"
         ),
     }
 
@@ -124,14 +180,17 @@ def _classify_claimer(claim_count: int) -> str:
     return "first_time"
 
 
-def delivery_signals(order, buyer) -> dict:
-    """Post-delivery corroboration signals for a dispute.
+def delivery_signals(order, buyer, hub=None) -> dict:
+    """Post-delivery corroboration signals for a dispute (OTP is ONE signal, not proof).
 
-    Independent signals: OTP-scan-vs-items mismatch, hub anomaly. Serial-claimer
-    history is a routing signal (-> manual review), not a corroboration signal.
+    Independent corroborating signals: OTP-scan-vs-items mismatch, hub anomaly, and
+    a missing geo-tagged proof-of-delivery photo. Two or more -> refund fast-track.
+    Serial-claimer history is a routing signal (-> manual review), not corroboration.
+    A fraudulent hub (repeat cases) demands IMMEDIATE ops escalation.
     """
     otp_mismatch = order.otp_scan_count < order.items_count
     hub_anomaly = bool(order.hub_anomaly_flag)
+    no_geo_proof = not bool(order.geo_photo_verified)
     claim_count = (buyer.claim_history or {}).get("count", 0) if buyer else 0
     claimer = _classify_claimer(claim_count)
 
@@ -140,6 +199,11 @@ def delivery_signals(order, buyer) -> dict:
         independent_signals.append("otp_scan_mismatch")
     if hub_anomaly:
         independent_signals.append("hub_anomaly")
+    if no_geo_proof:
+        independent_signals.append("no_geo_verified_photo")
+
+    hub_case_count = (hub.case_count if hub else 0) or 0
+    hub_fraudulent = hub_case_count >= HUB_ESCALATE_CASE_COUNT
 
     return {
         "order_id": order.id,
@@ -147,12 +211,18 @@ def delivery_signals(order, buyer) -> dict:
         "items_count": order.items_count,
         "otp_mismatch": otp_mismatch,
         "hub_anomaly": hub_anomaly,
+        "geo_photo_verified": bool(order.geo_photo_verified),
+        "hub_id": order.hub_id,
+        "hub_case_count": hub_case_count,
+        "hub_fraudulent": hub_fraudulent,
         "claimer_classification": claimer,
         "independent_signal_count": len(independent_signals),
         "independent_signals": independent_signals,
-        "flag": len(independent_signals) >= 1,
+        "corroborated": len(independent_signals) >= REFUND_MIN_SIGNALS,
+        "flag": len(independent_signals) >= 1 or hub_fraudulent,
         "reason": (
             f"{len(independent_signals)} independent signal(s): {independent_signals or 'none'}; "
-            f"buyer is a {claimer} claimer (count={claim_count})"
+            f"buyer is a {claimer} claimer (count={claim_count}); "
+            f"hub={order.hub_id} cases={hub_case_count} fraudulent={hub_fraudulent}"
         ),
     }

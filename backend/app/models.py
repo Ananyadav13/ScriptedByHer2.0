@@ -14,6 +14,8 @@ class Seller(Base):
     rating: Mapped[float] = mapped_column(Float, default=0.0)
     account_created_at: Mapped[datetime] = mapped_column(DateTime)
     trust_flags: Mapped[list] = mapped_column(JSON, default=list)
+    case_count: Mapped[int] = mapped_column(Integer, default=0)   # substantiated cases in window
+    banned: Mapped[bool] = mapped_column(default=False)
 
     products: Mapped[list["Product"]] = relationship(back_populates="seller")
 
@@ -30,7 +32,9 @@ class Product(Base):
     images: Mapped[list] = mapped_column(JSON, default=list)
     size_chart_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     fabric_claim: Mapped[str | None] = mapped_column(String, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="active")  # active/locked/delisted/correction_window/suspended
+    # active/locked/delisted/correction_window/suspended/on_hold/needs_info
+    status: Mapped[str] = mapped_column(String, default="active")
+    knockoff_flag: Mapped[bool] = mapped_column(default=False)  # relabeled as honest knockoff
 
     seller: Mapped["Seller"] = relationship(back_populates="products")
     reviews: Mapped[list["Review"]] = relationship(back_populates="product")
@@ -55,6 +59,22 @@ class Buyer(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     kept_size_history_json: Mapped[dict] = mapped_column(JSON, default=dict)
     claim_history: Mapped[dict] = mapped_column(JSON, default=dict)  # {count, outcomes: []}
+    case_count: Mapped[int] = mapped_column(Integer, default=0)
+    blocked: Mapped[bool] = mapped_column(default=False)
+
+
+class Hub(Base):
+    """Delivery partner / logistics hub — the third fraud actor.
+
+    Hubs are never auto-banned (infrastructure); a fraudulent hub triggers an
+    IMMEDIATE notification to the support/ops team (see orchestrator).
+    """
+    __tablename__ = "hubs"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+    region: Mapped[str] = mapped_column(String, default="")
+    score: Mapped[float] = mapped_column(Float, default=5.0)   # 0-5 reliability score
+    case_count: Mapped[int] = mapped_column(Integer, default=0)  # disputes traced to this hub (window)
 
 
 class Order(Base):
@@ -62,10 +82,12 @@ class Order(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     buyer_id: Mapped[str] = mapped_column(ForeignKey("buyers.id"))
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"))
+    hub_id: Mapped[str | None] = mapped_column(ForeignKey("hubs.id"), nullable=True)
     otp_scan_count: Mapped[int] = mapped_column(Integer, default=0)
     items_count: Mapped[int] = mapped_column(Integer, default=1)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     hub_anomaly_flag: Mapped[bool] = mapped_column(default=False)
+    geo_photo_verified: Mapped[bool] = mapped_column(default=False)  # geo-tagged proof-of-delivery
     status: Mapped[str] = mapped_column(String, default="delivered")  # delivered/refunded/manual_review
 
 
@@ -98,4 +120,17 @@ class CatalogAction(Base):
     action: Mapped[str] = mapped_column(String)  # lock/delist/suspend/correction/fix_draft/logistics/reverify
     evidence_json: Mapped[dict] = mapped_column(JSON, default=dict)
     seller_approved: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Notification(Base):
+    """Outbound message to a seller / support / ops team — how the graduated
+    ladder's 'notify' and 'immediate hub escalation' actions become real."""
+    __tablename__ = "notifications"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    audience: Mapped[str] = mapped_column(String)   # seller | support | ops
+    subject: Mapped[str] = mapped_column(String)
+    body: Mapped[str] = mapped_column(Text)
+    priority: Mapped[str] = mapped_column(String, default="normal")  # normal | high | immediate
+    related_id: Mapped[str | None] = mapped_column(String, nullable=True)  # product/order/hub id
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

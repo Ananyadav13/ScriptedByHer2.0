@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from google.genai import types
 
-from ..models import Order, Product, Buyer
+from ..models import Buyer, Hub, Order, Product
 from ..services import risk_checks
 
 
@@ -61,6 +61,7 @@ def dispatch(name: str, args: dict, db) -> dict:
             "price_mrp": risk_checks.price_mrp_risk(product),
             "image_match": risk_checks.image_match_risk(product),
             "review_burst": risk_checks.review_burst_risk(product),
+            "trustworthy_rating": risk_checks.trustworthy_rating(product),
         }
     if name == "check_seller_profile":
         product = db.get(Product, args["product_id"])
@@ -72,5 +73,6 @@ def dispatch(name: str, args: dict, db) -> dict:
         if not order:
             return {"error": f"order {args.get('order_id')} not found"}
         buyer = db.get(Buyer, order.buyer_id)
-        return risk_checks.delivery_signals(order, buyer)
+        hub = db.get(Hub, order.hub_id) if order.hub_id else None
+        return risk_checks.delivery_signals(order, buyer, hub)
     return {"error": f"unknown tool {name}"}

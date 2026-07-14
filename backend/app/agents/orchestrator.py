@@ -14,8 +14,9 @@ from datetime import datetime
 from google.genai import types
 
 from ..db import SessionLocal
-from ..models import CatalogAction, Investigation, Product
+from ..models import CatalogAction, Hub, Investigation, Notification, Order, Product
 from ..schemas import Verdict
+from ..services import rules
 from . import agent1_tools, events
 from .gemini_client import generate_with_retry
 from .prompts import AGENT1_SYSTEM_PROMPT, VERDICT_INSTRUCTION
@@ -81,7 +82,7 @@ def run_investigation(investigation_id: str, product_id: str | None,
         verdict = _final_verdict(contents)
         inv.tool_calls_log_json = tool_log
         inv.verdict_json = verdict.model_dump()
-        _execute_action(db, product, verdict)
+        _execute_action(db, product, order_id, verdict)
         inv.status = "done"
         db.commit()
         events.publish(investigation_id, {"type": "verdict", **verdict.model_dump()})
@@ -113,16 +114,89 @@ def _final_verdict(contents: list) -> Verdict:
     return resp.parsed
 
 
-def _execute_action(db, product: Product | None, verdict: Verdict) -> None:
-    """Act on the verdict. Phase 2 executes catalog locks; order effects land in Phase 3."""
-    if product is None:
-        return
-    if verdict.decision == "counterfeit_lock":
-        product.status = "locked"
-        db.add(CatalogAction(
-            id=f"act_{uuid.uuid4().hex[:12]}",
-            product_id=product.id,
-            action="lock",
-            evidence_json={"decision": verdict.decision, "evidence": verdict.evidence},
-            created_at=datetime.utcnow(),
-        ))
+def _notify(db, audience: str, subject: str, body: str,
+            priority: str = "normal", related_id: str | None = None) -> None:
+    db.add(Notification(
+        id=f"ntf_{uuid.uuid4().hex[:12]}",
+        audience=audience, subject=subject, body=body,
+        priority=priority, related_id=related_id, created_at=datetime.utcnow(),
+    ))
+
+
+def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
+    db.add(CatalogAction(
+        id=f"act_{uuid.uuid4().hex[:12]}",
+        product_id=product_id,
+        action=action,
+        evidence_json={"decision": verdict.decision, "evidence": verdict.evidence},
+        created_at=datetime.utcnow(),
+    ))
+
+
+def _execute_action(db, product: Product | None, order_id: str | None, verdict: Verdict) -> None:
+    """Execute the graduated action ladder — the agent acts, it doesn't just flag.
+
+    Philosophy: authenticity matters, but NOT at the cost of the buyer/seller
+    community. Counterfeits people regret get locked; knockoffs people love get
+    relabeled, not banned. A fraudulent hub triggers immediate ops escalation.
+    """
+    d = verdict.decision
+    buyer_msg = verdict.buyer_explanation
+
+    # ---- product-centric outcomes ----
+    if product is not None:
+        if d == "counterfeit_lock":
+            product.status = "locked"
+            _log_action(db, product.id, "lock", verdict)
+            _notify(db, "seller", "Listing locked: counterfeit",
+                    f"{product.title}: {buyer_msg}", "high", product.id)
+
+        elif d == "relabel_required":
+            # keep it live; ask the seller to relabel honestly as a knockoff
+            product.knockoff_flag = True
+            _log_action(db, product.id, "relabel_request", verdict)
+            _notify(db, "seller", "Relabel required: sell as knockoff/inspired",
+                    f"{product.title}: buyers value this product, but it must be relabeled "
+                    f"honestly as a knockoff/inspired item. {buyer_msg}", "normal", product.id)
+
+        elif d == "notify_only":
+            _log_action(db, product.id, "notify", verdict)
+            _notify(db, "seller", "Listing inconsistency flagged",
+                    f"{product.title}: {buyer_msg}", "normal", product.id)
+            _notify(db, "support", "Inconsistency to review (sale continues)",
+                    f"{product.title}: {buyer_msg}", "normal", product.id)
+
+        elif d == "hold_pending_fix":
+            product.status = "on_hold"
+            _log_action(db, product.id, "hold", verdict)
+            _notify(db, "seller", "Listing on hold — action needed",
+                    f"{product.title}: {buyer_msg}", "high", product.id)
+
+        elif d == "ban":
+            product.status = "suspended"
+            if product.seller is not None:
+                product.seller.banned = True
+                for p in product.seller.products:
+                    p.status = "suspended"
+            _log_action(db, product.id, "ban", verdict)
+            _notify(db, "support", "Seller banned (repeat offender)",
+                    f"{product.title}: {buyer_msg}", "immediate",
+                    product.seller_id if product else None)
+
+    # ---- order / delivery outcomes ----
+    order = db.get(Order, order_id) if order_id else None
+    if order is not None:
+        if d == "refund_fast_track":
+            order.status = "refunded"
+            _notify(db, "support", "Refund fast-tracked (two corroborating signals)",
+                    f"Order {order.id}: {buyer_msg}", "high", order.id)
+        elif d == "manual_review":
+            order.status = "manual_review"
+            _notify(db, "support", "Dispute routed to manual review",
+                    f"Order {order.id}: {buyer_msg}", "normal", order.id)
+        # immediate hub escalation whenever a fraudulent hub is implicated
+        hub = db.get(Hub, order.hub_id) if order.hub_id else None
+        if hub is not None and (hub.case_count or 0) >= rules.HUB_ESCALATE_CASE_COUNT:
+            _notify(db, "ops", "URGENT: fraudulent delivery hub",
+                    f"Hub {hub.name} ({hub.id}) has {hub.case_count} cases — investigate immediately.",
+                    "immediate", hub.id)

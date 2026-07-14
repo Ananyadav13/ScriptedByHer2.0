@@ -8,6 +8,7 @@ from .db import Base, SessionLocal, engine
 from .models import (
     Buyer,
     CatalogAction,
+    Hub,
     Investigation,
     Order,
     Product,
@@ -46,9 +47,13 @@ def _seed(db):
         Seller(id="seller_shoes", name="StepUp Footwear", rating=4.1,
                account_created_at=_dt(600), trust_flags=[]),
         Seller(id="seller_lowrated", name="BargainBin", rating=1.8,
-               account_created_at=_dt(300), trust_flags=["quality_complaints"]),
+               account_created_at=_dt(300), trust_flags=["quality_complaints"],
+               case_count=5),  # repeat offender -> ban path
         Seller(id="seller_fixable", name="HomeComfort", rating=2.4,
                account_created_at=_dt(400), trust_flags=[]),
+        # honest seller of a well-loved cheap knockoff -> relabel path (not ban)
+        Seller(id="seller_knockoff", name="StreetStyle Optics", rating=4.2,
+               account_created_at=_dt(450), trust_flags=[]),
     ]
     db.add_all(sellers)
 
@@ -87,6 +92,12 @@ def _seed(db):
                 price=549, mrp=1299, images=["bedsheet.jpg"],
                 fabric_claim="cotton", status="active",
                 size_chart_json=None),
+        # 7. Loved knockoff: branded-style, far below MRP (counterfeit signal) BUT
+        #    genuinely high trustworthy rating -> relabel_required, NOT a ban.
+        Product(id="prod_knockoff_loved", seller_id="seller_knockoff",
+                title="Aviator Sunglasses (Rayban-inspired)", brand="Rayban", category="accessories",
+                price=499, mrp=7999, images=["aviator.jpg"],
+                fabric_claim=None, status="active"),
         # benign filler (realistic catalog, no flags)
         Product(id="prod_normal_mug", seller_id="seller_viral",
                 title="Ceramic Coffee Mug 350ml", brand="TrendyThreads", category="home",
@@ -128,6 +139,15 @@ def _seed(db):
         reviews.append(Review(id=f"rev_lr_{i}", product_id="prod_lowrated_fraud",
                               rating=1, text=fraud_txt[i % 4], created_at=_dt(30 + i % 60),
                               reviewer_account_age_days=200))
+    # loved knockoff: genuine, mostly-happy reviews from ESTABLISHED accounts,
+    # spread over recent weeks -> high trustworthy rating despite the low price.
+    knock_txt = ["Looks exactly like the real ones, great value", "Solid build for the price",
+                 "Everyone thinks they're original", "Good UV protection, happy with it",
+                 "Not the real brand but excellent quality"]
+    for i in range(20):
+        reviews.append(Review(id=f"rev_kn_{i}", product_id="prod_knockoff_loved",
+                              rating=5 if i % 5 else 4, text=knock_txt[i % 5],
+                              created_at=_dt(i * 3), reviewer_account_age_days=200 + i * 15))
     # fixable: many mid reviews about fixable gaps (missing size info / thin)
     fix_txt = ["Thinner than expected", "No size chart, guessed wrong",
                "Decent but description lacks detail", "Okay quality, poor listing info"]
@@ -147,16 +167,26 @@ def _seed(db):
                                                        "refunded", "denied", "refunded", "refunded"]}),
     ])
 
+    # ---------- HUBS (delivery partners) ----------
+    db.add_all([
+        # fraudulent hub: many disputes traced here -> immediate ops escalation
+        Hub(id="hub_faulty", name="Sector-9 Logistics Hub", region="North",
+            score=1.9, case_count=6),
+        Hub(id="hub_normal", name="Central Fulfilment Hub", region="Central",
+            score=4.6, case_count=0),
+    ])
+
     # ---------- ORDERS ----------
     db.add_all([
-        # multi-item, single OTP scan, hub anomaly -> refund fast-track (2 signals)
+        # multi-item, single OTP scan, hub anomaly, no geo-photo, routed via the faulty
+        # hub -> refund fast-track (two independent signals) + hub escalation.
         Order(id="order_otp_dispute", buyer_id="buyer_normal", product_id="prod_size_shoes",
-              otp_scan_count=1, items_count=3, delivered_at=_dt(1), hub_anomaly_flag=True,
-              status="delivered"),
-        # serial claimer order -> manual review
+              hub_id="hub_faulty", otp_scan_count=1, items_count=3, delivered_at=_dt(1),
+              hub_anomaly_flag=True, geo_photo_verified=False, status="delivered"),
+        # serial claimer order -> manual review (routed via a clean hub)
         Order(id="order_serial", buyer_id="buyer_serial_claimer", product_id="prod_fabric_kurti",
-              otp_scan_count=1, items_count=1, delivered_at=_dt(1), hub_anomaly_flag=False,
-              status="delivered"),
+              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(1),
+              hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"),
     ])
 
     # ---------- SIZE DRIFT ----------
