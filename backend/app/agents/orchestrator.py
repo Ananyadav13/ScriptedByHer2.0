@@ -154,12 +154,15 @@ def _execute_action(db, product: Product | None, order_id: str | None, verdict: 
         elif d == "relabel_required":
             # keep it live; ask the seller to relabel honestly as a knockoff
             product.knockoff_flag = True
+            product.buyer_tip = buyer_msg  # gentle at-purchase note
             _log_action(db, product.id, "relabel_request", verdict)
             _notify(db, "seller", "Relabel required: sell as knockoff/inspired",
                     f"{product.title}: buyers value this product, but it must be relabeled "
                     f"honestly as a knockoff/inspired item. {buyer_msg}", "normal", product.id)
 
         elif d == "notify_only":
+            # sale continues; surface a soft heads-up to the buyer at add-to-cart
+            product.buyer_tip = buyer_msg
             _log_action(db, product.id, "notify", verdict)
             _notify(db, "seller", "Listing inconsistency flagged",
                     f"{product.title}: {buyer_msg}", "normal", product.id)

@@ -10,6 +10,7 @@ from .models import (
     CatalogAction,
     Hub,
     Investigation,
+    Manager,
     Order,
     Product,
     Review,
@@ -25,6 +26,7 @@ def _dt(days_ago: float) -> datetime:
 
 
 def reset_and_seed():
+    """Dev: drop + recreate + seed. Destroys existing data."""
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
@@ -35,25 +37,45 @@ def reset_and_seed():
         db.close()
 
 
+def create_and_seed_if_empty():
+    """Persistent deployments: create tables if missing, seed only when empty.
+    Never drops — data, logs and history survive restarts (no data loss)."""
+    Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        if db.query(Product).first() is None:
+            _seed(db)
+            db.commit()
+    finally:
+        db.close()
+
+
 def _seed(db):
-    # ---------- SELLERS ----------
+    # ---------- MANAGERS (business managers own a book of sellers) ----------
+    db.add_all([
+        Manager(id="mgr_north", name="Priya (North zone)"),
+        Manager(id="mgr_south", name="Arjun (South zone)"),
+    ])
+
+    # ---------- SELLERS (manager_id links each to a business manager) ----------
     sellers = [
         Seller(id="seller_counterfeit", name="LuxDeals Store", rating=3.1,
-               account_created_at=_dt(20), trust_flags=["new_account_cluster"]),
+               account_created_at=_dt(20), trust_flags=["new_account_cluster"],
+               manager_id="mgr_north"),
         Seller(id="seller_viral", name="TrendyThreads", rating=4.4,
-               account_created_at=_dt(900), trust_flags=[]),
+               account_created_at=_dt(900), trust_flags=[], manager_id="mgr_south"),
         Seller(id="seller_kurti", name="EthnicWeave", rating=3.9,
-               account_created_at=_dt(500), trust_flags=[]),
+               account_created_at=_dt(500), trust_flags=[], manager_id="mgr_north"),
         Seller(id="seller_shoes", name="StepUp Footwear", rating=4.1,
-               account_created_at=_dt(600), trust_flags=[]),
+               account_created_at=_dt(600), trust_flags=[], manager_id="mgr_south"),
         Seller(id="seller_lowrated", name="BargainBin", rating=1.8,
                account_created_at=_dt(300), trust_flags=["quality_complaints"],
-               case_count=5),  # repeat offender -> ban path
+               case_count=5, manager_id="mgr_north"),  # repeat offender -> ban path
         Seller(id="seller_fixable", name="HomeComfort", rating=2.4,
-               account_created_at=_dt(400), trust_flags=[]),
+               account_created_at=_dt(400), trust_flags=[], manager_id="mgr_south"),
         # honest seller of a well-loved cheap knockoff -> relabel path (not ban)
         Seller(id="seller_knockoff", name="StreetStyle Optics", rating=4.2,
-               account_created_at=_dt(450), trust_flags=[]),
+               account_created_at=_dt(450), trust_flags=[], manager_id="mgr_north"),
     ]
     db.add_all(sellers)
 

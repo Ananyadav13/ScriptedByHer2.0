@@ -7,6 +7,16 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .db import Base
 
 
+class Manager(Base):
+    """Meesho business manager — owns a book of sellers (~100:1). Every agent lock
+    lands in this manager's review queue; the ABSOLUTE unlock/delete decision is theirs."""
+    __tablename__ = "managers"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str] = mapped_column(String)
+
+    sellers: Mapped[list["Seller"]] = relationship(back_populates="manager")
+
+
 class Seller(Base):
     __tablename__ = "sellers"
     id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -16,7 +26,9 @@ class Seller(Base):
     trust_flags: Mapped[list] = mapped_column(JSON, default=list)
     case_count: Mapped[int] = mapped_column(Integer, default=0)   # substantiated cases in window
     banned: Mapped[bool] = mapped_column(default=False)
+    manager_id: Mapped[str | None] = mapped_column(ForeignKey("managers.id"), nullable=True)
 
+    manager: Mapped["Manager"] = relationship(back_populates="sellers")
     products: Mapped[list["Product"]] = relationship(back_populates="seller")
 
 
@@ -35,6 +47,7 @@ class Product(Base):
     # active/locked/delisted/correction_window/suspended/on_hold/needs_info
     status: Mapped[str] = mapped_column(String, default="active")
     knockoff_flag: Mapped[bool] = mapped_column(default=False)  # relabeled as honest knockoff
+    buyer_tip: Mapped[str | None] = mapped_column(Text, nullable=True)  # gentle at-purchase note
 
     seller: Mapped["Seller"] = relationship(back_populates="products")
     reviews: Mapped[list["Review"]] = relationship(back_populates="product")
@@ -50,6 +63,7 @@ class Review(Base):
     reviewer_account_age_days: Mapped[int] = mapped_column(Integer)
     has_video: Mapped[bool] = mapped_column(default=False)
     video_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[str] = mapped_column(String, default="manual")  # manual | image | video
 
     product: Mapped["Product"] = relationship(back_populates="reviews")
 

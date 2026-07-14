@@ -1,0 +1,25 @@
+# Local/self-hosted deployment with PERSISTENT data (no data loss on restart).
+# Render is fine for the hosted demo; this compose file is the good-practice
+# fallback that keeps the SQLite DB, logs and history on named volumes.
+#
+#   GEMINI_API_KEY=your-key docker compose up --build
+#
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      # DB lives on the persistent volume, NOT the container layer
+      DATABASE_URL: "sqlite:////data/build_trust.db"
+      # do NOT wipe on boot — keep data across restarts
+      SEED_RESET: "false"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
+      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-*}"
+    volumes:
+      - db_data:/data            # SQLite database file — survives restarts
+      - ./backend/logs:/app/logs # application logs / history on the host
+    restart: unless-stopped
+
+volumes:
+  db_data:

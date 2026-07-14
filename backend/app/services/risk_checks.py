@@ -20,6 +20,8 @@ from .rules import (
     BURST_MIN_PEAK,
     BURST_NEW_SHARE,
     HUB_ESCALATE_CASE_COUNT,
+    MANUAL_REVIEW_WEIGHT,
+    MEDIA_REVIEW_WEIGHT,
     MIN_TRUSTWORTHY_REVIEWS,
     NEW_ACCOUNT_AGE_DAYS,
     PRICE_BELOW_MRP_RATIO,
@@ -122,6 +124,8 @@ def trustworthy_rating(product) -> dict:
             continue  # discount fake/new-account cluster entirely
         age_days = (now - r.created_at).days
         w = RECENT_REVIEW_WEIGHT if age_days <= RECENT_REVIEW_WINDOW_DAYS else OLD_REVIEW_WEIGHT
+        # human-written reviews outrank AI-derived (image/video) signal
+        w *= MANUAL_REVIEW_WEIGHT if getattr(r, "source", "manual") == "manual" else MEDIA_REVIEW_WEIGHT
         weighted_sum += r.rating * w
         weight_total += w
         counted += 1

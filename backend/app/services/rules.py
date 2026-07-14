@@ -46,3 +46,23 @@ REPEAT_CASE_WINDOW_DAYS = 30
 REFUND_MIN_SIGNALS = 2           # independent corroborating signals for a fast-track refund
 SERIAL_CLAIM_COUNT = 5           # buyer claim_history count >= this => serial claimer -> manual review
 HUB_ESCALATE_CASE_COUNT = 3      # hub cases (per window) before immediate ops escalation
+
+# ---------------------------------------------------------------------------
+# 6. Review weighting — human-written reviews outrank AI-derived (image/video)
+#    ones when computing a product/seller rating. A person typing a complaint is
+#    stronger evidence than an agent's read of a photo.
+# ---------------------------------------------------------------------------
+MANUAL_REVIEW_WEIGHT = 1.5       # multiplier for human-written reviews
+MEDIA_REVIEW_WEIGHT = 1.0        # image/video-derived review signal
+
+# ---------------------------------------------------------------------------
+# 7. Agent 2 delisting tiers (Phase 4). "The product no longer works for buyers."
+#    Evaluated on RECENT reviews. Each tier: (rating_below, min_review_count).
+#    Trips => remove from catalogue, drop seller rating, notify seller (with logs).
+# ---------------------------------------------------------------------------
+DELIST_TIERS = [
+    (3.0, 1000),   # avg recent rating < 3.0 across >= 1000 recent reviews
+    (2.0, 700),    # < 2.0 across >= 700
+    (1.0, 500),    # <= 1.0 across >= 500  (treated as < 1.01)
+]
+SELLER_RATING_DROP_ON_DELIST = 0.3   # seller rating penalty when a product is delisted for quality
