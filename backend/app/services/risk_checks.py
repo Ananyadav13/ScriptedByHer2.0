@@ -29,6 +29,7 @@ from .rules import (
     RECENT_REVIEW_WINDOW_DAYS,
     REFUND_MIN_SIGNALS,
     REPEAT_CASE_COUNT,
+    SELLER_PENALTY_MAX,
     SERIAL_CLAIM_COUNT,
     OLD_REVIEW_WEIGHT,
 )
@@ -158,10 +159,12 @@ def seller_profile(seller) -> dict:
     flags = list(seller.trust_flags or [])
     new_account = age_days < 90 or "new_account_cluster" in flags
     repeat_offender = (seller.case_count or 0) >= REPEAT_CASE_COUNT
+    effective = seller_effective_rating(seller)["effective_rating"]
     return {
         "seller_id": seller.id,
         "name": seller.name,
-        "rating": seller.rating,
+        "rating": seller.rating,                 # stored/legacy rating
+        "effective_rating": effective,           # fair, data-derived rating
         "account_age_days": age_days,
         "trust_flags": flags,
         "case_count": seller.case_count or 0,
@@ -172,6 +175,74 @@ def seller_profile(seller) -> dict:
         "reason": (
             f"account {age_days}d old; rating {seller.rating}; "
             f"cases={seller.case_count or 0} (repeat={repeat_offender}); flags={flags or 'none'}"
+        ),
+    }
+
+
+def _product_trust(product) -> tuple[float, int] | None:
+    """(trustworthy_rating, genuine_review_count) for a product, or None if insufficient."""
+    t = trustworthy_rating(product)
+    if not t["sufficient"]:
+        return None
+    return t["trustworthy_rating"], t["trustworthy_review_count"]
+
+
+def seller_effective_rating(seller) -> dict:
+    """Seller rating derived FROM the data — a review-volume-weighted average of the
+    trustworthy ratings of the seller's LIVE products. One bad product among many
+    barely moves it; that is the fairness the flat penalty lacked."""
+    num = den = 0.0
+    live = considered = 0
+    for p in seller.products:
+        if p.status in ("delisted", "suspended"):
+            continue  # removed products stop counting
+        live += 1
+        pt = _product_trust(p)
+        if pt is None:
+            continue
+        rating, n = pt
+        num += rating * n
+        den += n
+        considered += 1
+    effective = round(num / den, 2) if den else None
+    return {
+        "seller_id": seller.id,
+        "effective_rating": effective,
+        "live_products": live,
+        "rated_products": considered,
+        "reason": (
+            f"volume-weighted over {considered} rated live product(s) "
+            f"of {live} -> {effective}"
+        ),
+    }
+
+
+def seller_rating_impact(seller, failed_product) -> dict:
+    """FAIR penalty when a product is delisted for fraud/quality: proportional to the
+    failed product's share of the seller's genuine reviews, capped at SELLER_PENALTY_MAX.
+
+    50 good products + 1 small failure -> ~0 impact; a seller whose one product IS their
+    business -> a large hit. (Logistics/delivery faults should pass reason='fault' and
+    incur NO integrity penalty.)"""
+    failed = _product_trust(failed_product)
+    failed_n = failed[1] if failed else 0
+    total_n = 0
+    for p in seller.products:
+        if p.status in ("delisted", "suspended") and p.id != failed_product.id:
+            continue
+        pt = _product_trust(p)
+        if pt is not None:
+            total_n += pt[1]
+    share = (failed_n / total_n) if total_n else 1.0
+    penalty = round(min(SELLER_PENALTY_MAX, SELLER_PENALTY_MAX * share), 3)
+    return {
+        "seller_id": seller.id,
+        "failed_product": failed_product.id,
+        "failed_review_share": round(share, 3),
+        "penalty": penalty,
+        "reason": (
+            f"failed product = {share:.1%} of seller's genuine reviews -> "
+            f"rating penalty {penalty} (max {SELLER_PENALTY_MAX})"
         ),
     }
 

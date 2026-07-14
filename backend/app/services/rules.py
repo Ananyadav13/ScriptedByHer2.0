@@ -65,4 +65,29 @@ DELIST_TIERS = [
     (2.0, 700),    # < 2.0 across >= 700
     (1.0, 500),    # <= 1.0 across >= 500  (treated as < 1.01)
 ]
-SELLER_RATING_DROP_ON_DELIST = 0.3   # seller rating penalty when a product is delisted for quality
+
+# ---------------------------------------------------------------------------
+# 8. FAIR seller-rating impact (replaces a flat penalty — a flat -0.3 punishes a
+#    50-product seller the same as a 1-product scammer, which is unfair).
+#    The seller's rating is a REVIEW-VOLUME-WEIGHTED average of their live
+#    products, so a delist affects it only in proportion to that product's share
+#    of the seller's genuine reviews. An explicit fraud penalty is likewise
+#    scaled by that share and capped.
+# ---------------------------------------------------------------------------
+SELLER_PENALTY_MAX = 0.5             # worst-case hit, only for a seller who is essentially all-fraud
+# fault delists (logistics / delivery) do NOT touch the seller integrity score at all
+
+# ---------------------------------------------------------------------------
+# 9. Real-time behavioural factors (make decisions feel live, not one-shot).
+#    Consumed by Agent 1 tripwires (Phase 4 wiring) and the dispute flow (Phase 3).
+# ---------------------------------------------------------------------------
+SELLER_COUNTERFEIT_RATING = 2.5      # seller rating <= this + price flag => strong counterfeit lean
+PEAK_FAKE_WINDOW_DAYS = 3            # window around a product's rating-peak day to inspect
+PEAK_FAKE_SHARE = 0.50              # >= this share of near-peak reviews from new accounts => manipulated peak
+RATING_TREND_WINDOW_DAYS = 30        # compare last-30d vs prior-30d trustworthy rating
+RATING_DROP_ALERT = 0.5             # a drop >= this across windows => deteriorating product (tripwire)
+RETURN_RATE_ALERT = 0.30            # > 30% recent returns/RTO => quality problem
+DISPUTE_RATE_ALERT = 0.10           # > 10% of recent orders disputed => investigate
+PHOTO_MISMATCH_SHARE = 0.40         # > 40% of review photos contradict the listing (vision, Phase 3)
+SELLER_QC_SLA_DAYS = 7              # seller quality-check response deadline before we act
+MIN_ORDERS_FOR_ACTION = 20          # confidence floor: need >= this many orders before a hard lock/ban
