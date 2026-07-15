@@ -142,18 +142,25 @@ def _seed(db):
         reviews.append(Review(id=f"rev_vi_{i}", product_id="prod_viral_honest",
                               rating=5, text="Great fit, soft cotton, went viral on reels",
                               created_at=_dt(3), reviewer_account_age_days=400 + i * 20))
-    # fabric kurti: negative cluster, one flagged for video (Phase 3 attaches video)
+    # fabric kurti: negative cluster; two reviews carry videos (Phase 3 vision).
+    # video_path points at a REAL review-video asset dropped into media/videos/
+    # (or a frames/<dir> of stills). Left None until the physical recordings are
+    # supplied; the vision tool then reports available=False and the agent decides
+    # on the text signals alone — no fabricated evidence. Wire the filenames here.
+    KURTI_VIDEO = {0: None, 3: None}  # e.g. {0: "kurti_review_synthetic_1.mp4", 3: "kurti_review_2.mp4"}
     kurti_neg = [
-        ("Fabric feels synthetic, not cotton at all", 2, True),
-        ("Shrank after first wash", 2, False),
-        ("Shiny polyester look, misleading listing", 1, False),
-        ("Not breathable, definitely not pure cotton", 2, True),
-        ("Color faded, cheap material", 2, False),
+        ("Fabric feels synthetic, not cotton at all", 2),
+        ("Shrank after first wash", 2),
+        ("Shiny polyester look, misleading listing", 1),
+        ("Not breathable, definitely not pure cotton", 2),
+        ("Color faded, cheap material", 2),
     ]
-    for i, (t, r, vid) in enumerate(kurti_neg):
+    for i, (t, r) in enumerate(kurti_neg):
+        vpath = KURTI_VIDEO.get(i)
         reviews.append(Review(id=f"rev_ku_{i}", product_id="prod_fabric_kurti",
                               rating=r, text=t, created_at=_dt(10 + i),
-                              reviewer_account_age_days=300, has_video=vid))
+                              reviewer_account_age_days=300,
+                              has_video=(i in KURTI_VIDEO), video_path=vpath))
     # low-rated fraud: many low reviews with fraud-y language
     fraud_txt = ["Fake product, not as described", "Scam, stopped working in a day",
                  "Counterfeit, avoid this seller", "Never delivered what was shown"]
@@ -199,7 +206,7 @@ def _seed(db):
     ])
 
     # ---------- ORDERS ----------
-    db.add_all([
+    orders = [
         # multi-item, single OTP scan, hub anomaly, no geo-photo, routed via the faulty
         # hub -> refund fast-track (two independent signals) + hub escalation.
         Order(id="order_otp_dispute", buyer_id="buyer_normal", product_id="prod_size_shoes",
@@ -209,7 +216,16 @@ def _seed(db):
         Order(id="order_serial", buyer_id="buyer_serial_claimer", product_id="prod_fabric_kurti",
               hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(1),
               hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"),
-    ])
+    ]
+    # Order volume for the counterfeit so it clears the confidence floor
+    # (>= MIN_ORDERS_FOR_ACTION) and still HARD-locks — a fake watch 24 people
+    # actually bought is exactly why we lock. Fewer orders -> request_qc_video.
+    for i in range(24):
+        orders.append(Order(id=f"order_cf_{i}", buyer_id="buyer_normal",
+                            product_id="prod_counterfeit_rolex", hub_id="hub_normal",
+                            otp_scan_count=1, items_count=1, delivered_at=_dt(5 + i % 20),
+                            hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"))
+    db.add_all(orders)
 
     # ---------- SIZE DRIFT ----------
     db.add_all([

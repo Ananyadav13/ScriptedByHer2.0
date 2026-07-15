@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import events, investigations, manager, ops, products
+from .routers import disputes, events, investigations, manager, ops, products
 from .seed import create_and_seed_if_empty, reset_and_seed
 
 app = FastAPI(title="Build Trust API")
@@ -17,6 +17,7 @@ app.add_middleware(
 
 app.include_router(products.router)
 app.include_router(investigations.router)
+app.include_router(disputes.router)
 app.include_router(events.router)
 app.include_router(ops.router)
 app.include_router(manager.router)

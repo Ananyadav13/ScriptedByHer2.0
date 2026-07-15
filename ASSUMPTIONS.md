@@ -79,8 +79,20 @@ with 50 good products and one dud is not a scammer.
 - **Reads:** `REFUND_MIN_SIGNALS` (2), `SERIAL_CLAIM_COUNT` (5), `HUB_ESCALATE_CASE_COUNT` (3).
 - **Signals:** OTP scans < items, hub anomaly, no geo-verified photo. `corroborated = signals ≥ 2`. `serial = claim_count ≥ 5`. `hub_fraudulent = hub cases ≥ 3`.
 
-### `image_match_risk(product)` 🎥 (Phase 3)
-- Will read `PHOTO_MISMATCH_SHARE` (0.40): fraction of review photos contradicting the listing.
+### `image_match_risk(product)` — official-image perceptual hash (still a stub; Phase 3 built the *video* path instead)
+
+### `order_volume(order_count)` ✅ (Phase 3) — confidence floor
+- **Reads:** `MIN_ORDERS_FOR_ACTION` (20). `meets_confidence_floor = order_count ≥ 20`.
+- A hard `counterfeit_lock` requires this OR an overdue QC video; otherwise `_execute_action`
+  downgrades to a reversible `request_qc_video`. (Rolex is seeded 24 orders so it still locks.)
+
+### `qc_sla_status(product)` ✅ (Phase 3) — seller QC-video latency SLA
+- **Reads:** `SELLER_QC_SLA_DAYS` (7). `qc_overdue = requested & not responded & days ≥ 7 → escalate`.
+
+### `analyze_video_reviews(product_id)` 🎥 (Phase 3, tool `check_video_reviews`)
+- Isolated multimodal sub-call over review-video keyframes. Reads `PHOTO_MISMATCH_SHARE` (0.40):
+  `mismatch_flag = observed-material contradicts the fabric_claim in ≥ 40% of frames`. Returns
+  observations only (no verdict); raw frames never enter the orchestrator context.
 
 ### Agent-1 decision (LLM + `_execute_action`) ✅
 - The ladder thresholds `BAN_RATING`, `PRODUCT_HOLD_RATING`, `INCONSISTENCY_EXEMPT_RATING`, `SELLER_CONCERN_RATING` are enforced by the system prompt, which **mirrors these constants** (see `prompts.py`). *Keep the prompt numbers in sync with `rules.py`.*
@@ -111,8 +123,12 @@ Not a single check — a sequence. Numbers in **bold**.
    volume ≥ 20 (confidence floor). Otherwise prefer relabel / notify.
 ```
 
-Built today: steps 1–2 + the relabel/notify actions (Phase 2). Steps 3 (QC video, latency
-SLA) and the photo-vs-review consistency need the vision pipeline + a seller workflow (Phase 3).
+Built: steps 1–2 + relabel/notify (Phase 2). **Phase 3 added:** the confidence floor
+(`order_volume` — a hard lock needs ≥ `MIN_ORDERS_FOR_ACTION` orders OR an overdue QC video,
+else it downgrades to `request_qc_video`), the seller **QC-video request + `SELLER_QC_SLA_DAYS`
+latency** (`qc_sla_status`; overdue → escalate), and the **photo-vs-review** consistency via the
+vision sub-call (`check_video_reviews` → `mismatch_share` vs `PHOTO_MISMATCH_SHARE`). The vision
+tool needs real review-video assets wired into `seed.py` to fire live.
 
 ---
 

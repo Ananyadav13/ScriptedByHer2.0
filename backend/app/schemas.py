@@ -4,7 +4,10 @@ from pydantic import BaseModel
 
 # ---- Agent 1 verdict (Phase 2 uses via Gemini response_schema -> response.parsed) ----
 class Verdict(BaseModel):
-    decision: str          # authentic | counterfeit_lock | refund_fast_track | manual_review | standard_process | cleared
+    # decision: counterfeit_lock | request_qc_video | relabel_required | notify_only |
+    #           hold_pending_fix | ban | refund_fast_track | standard_process |
+    #           manual_review | cleared | authentic
+    decision: str
     confidence: float
     evidence: list[str]
     action: str
@@ -34,6 +37,8 @@ class ProductOut(BaseModel):
     images: list
     fabric_claim: str | None
     status: str
+    knockoff_flag: bool = False
+    buyer_tip: str | None = None
 
     class Config:
         from_attributes = True
@@ -41,3 +46,7 @@ class ProductOut(BaseModel):
 
 class ProductDetail(ProductOut):
     reviews: list[ReviewOut] = []
+    # locked/on_hold/needs_info listings expose WHY + the latest agent action
+    lock_reason: str | None = None
+    latest_action: str | None = None
+    qc_requested: bool = False

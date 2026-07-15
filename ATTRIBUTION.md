@@ -18,9 +18,8 @@ Format: Name — Version — License — Role — Source.
 | Pillow | 11.1.0 | MIT-CMU | Image handling (perceptual hash) | https://github.com/python-pillow/Pillow |
 | ImageHash | 4.3.1 | BSD-2-Clause | Perceptual image-match check | https://github.com/JohannesBuchner/imagehash |
 | NumPy | 2.2.1 | BSD-3-Clause | Review-burst statistics | https://github.com/numpy/numpy |
+| opencv-python-headless | 4.11.0.86 | Apache-2.0 | Video keyframe extraction (Phase 3 vision pipeline) | https://github.com/opencv/opencv-python |
 | httpx | 0.28.1 | BSD-3-Clause | HTTP client (transitive/tests) | https://github.com/encode/httpx |
-
-_opencv-python-headless added in Phase 3 (video keyframe extraction) — will be recorded then._
 
 ## Frontend (Node)
 

@@ -22,7 +22,9 @@ from .rules import (
     HUB_ESCALATE_CASE_COUNT,
     MANUAL_REVIEW_WEIGHT,
     MEDIA_REVIEW_WEIGHT,
+    MIN_ORDERS_FOR_ACTION,
     MIN_TRUSTWORTHY_REVIEWS,
+    SELLER_QC_SLA_DAYS,
     NEW_ACCOUNT_AGE_DAYS,
     PRICE_BELOW_MRP_RATIO,
     RECENT_REVIEW_WEIGHT,
@@ -243,6 +245,50 @@ def seller_rating_impact(seller, failed_product) -> dict:
         "reason": (
             f"failed product = {share:.1%} of seller's genuine reviews -> "
             f"rating penalty {penalty} (max {SELLER_PENALTY_MAX})"
+        ),
+    }
+
+
+def order_volume(order_count: int) -> dict:
+    """Confidence floor: a hard lock/ban needs >= MIN_ORDERS_FOR_ACTION orders of
+    evidence. Below that, prefer a reversible action (hold / relabel / QC request)
+    so we never punish a seller on thin data. Overwhelming authenticity signals
+    are still surfaced; this only gates the *hard* outcomes."""
+    meets = order_count >= MIN_ORDERS_FOR_ACTION
+    return {
+        "order_count": order_count,
+        "min_for_hard_action": MIN_ORDERS_FOR_ACTION,
+        "meets_confidence_floor": meets,
+        "reason": (
+            f"{order_count} orders >= {MIN_ORDERS_FOR_ACTION} -> enough evidence for a hard action"
+            if meets else
+            f"only {order_count} orders (< {MIN_ORDERS_FOR_ACTION}) -> prefer a reversible action"
+        ),
+    }
+
+
+def qc_sla_status(product) -> dict:
+    """Seller quality-check video request + latency SLA (counterfeit flow step 3).
+
+    Once we request a QC video, the seller has SELLER_QC_SLA_DAYS to respond. No
+    response past the deadline is non-cooperation -> escalate to a hard lock."""
+    requested_at = getattr(product, "qc_requested_at", None)
+    responded = bool(getattr(product, "qc_responded", False))
+    if requested_at is None:
+        return {"qc_requested": False, "qc_responded": False, "qc_overdue": False,
+                "reason": "no quality-check video requested"}
+    days = (datetime.utcnow() - requested_at).days
+    overdue = (not responded) and days >= SELLER_QC_SLA_DAYS
+    return {
+        "qc_requested": True,
+        "qc_responded": responded,
+        "days_since_request": days,
+        "sla_days": SELLER_QC_SLA_DAYS,
+        "qc_overdue": overdue,
+        "reason": (
+            f"QC video responded after {days}d" if responded else
+            f"QC video overdue: {days}d >= {SELLER_QC_SLA_DAYS}d SLA -> escalate" if overdue else
+            f"QC video pending: {days}d of {SELLER_QC_SLA_DAYS}d SLA"
         ),
     }
 

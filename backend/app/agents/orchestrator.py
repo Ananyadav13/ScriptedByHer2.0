@@ -13,10 +13,11 @@ from datetime import datetime
 
 from google.genai import types
 
+from ..config import settings
 from ..db import SessionLocal
 from ..models import CatalogAction, Hub, Investigation, Notification, Order, Product
 from ..schemas import Verdict
-from ..services import rules
+from ..services import risk_checks, rules
 from . import agent1_tools, events
 from .gemini_client import generate_with_retry
 from .prompts import AGENT1_SYSTEM_PROMPT, VERDICT_INSTRUCTION
@@ -24,7 +25,8 @@ from .prompts import AGENT1_SYSTEM_PROMPT, VERDICT_INSTRUCTION
 MAX_TOOL_STEPS = 8
 
 
-def _investigation_request(product: Product | None, trigger: str, order_id: str | None) -> str:
+def _investigation_request(product: Product | None, trigger: str, order_id: str | None,
+                           claim_type: str | None = None) -> str:
     lines = [f"Investigation trigger: {trigger}."]
     if product is not None:
         lines.append(
@@ -34,12 +36,15 @@ def _investigation_request(product: Product | None, trigger: str, order_id: str 
         )
     if order_id:
         lines.append(f"Related order under dispute: {order_id}.")
+    if claim_type:
+        lines.append(f"Buyer's dispute claim type: {claim_type}.")
     lines.append("Investigate using the tools, then give your conclusion.")
     return "\n".join(lines)
 
 
 def run_investigation(investigation_id: str, product_id: str | None,
-                      trigger: str, order_id: str | None = None) -> None:
+                      trigger: str, order_id: str | None = None,
+                      claim_type: str | None = None) -> None:
     """Runs in a BackgroundTask worker thread. Streams events, stores verdict, executes action."""
     db = SessionLocal()
     try:
@@ -57,12 +62,12 @@ def run_investigation(investigation_id: str, product_id: str | None,
         )
         contents = [types.Content(
             role="user",
-            parts=[types.Part(text=_investigation_request(product, trigger, order_id))],
+            parts=[types.Part(text=_investigation_request(product, trigger, order_id, claim_type))],
         )]
 
         tool_log: list[dict] = []
         for _ in range(MAX_TOOL_STEPS):
-            resp = generate_with_retry(model="gemini-3-flash-preview",
+            resp = generate_with_retry(model=settings.llm_model,
                                        contents=contents, config=config)
             calls = resp.function_calls or []
             if not calls:
@@ -103,7 +108,7 @@ def _final_verdict(contents: list) -> Verdict:
     """One structured call: force a schema-valid Verdict, higher thinking budget."""
     contents = contents + [types.Content(role="user", parts=[types.Part(text=VERDICT_INSTRUCTION)])]
     resp = generate_with_retry(
-        model="gemini-3-flash-preview",
+        model=settings.llm_model,
         contents=contents,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -133,12 +138,28 @@ def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
     ))
 
 
+def _request_qc(db, product: Product, verdict: Verdict, buyer_msg: str) -> None:
+    """Reversible ask: request a seller quality-check video and start the SLA clock."""
+    product.status = "needs_info"
+    product.qc_requested_at = datetime.utcnow()
+    product.qc_responded = False
+    _log_action(db, product.id, "request_qc_video", verdict)
+    _notify(db, "seller", f"Quality-check video requested (respond within {rules.SELLER_QC_SLA_DAYS} days)",
+            f"{product.title}: authenticity is in question but evidence is not yet conclusive. "
+            f"Upload a quality-check video to keep the listing live. {buyer_msg}",
+            "high", product.id)
+
+
 def _execute_action(db, product: Product | None, order_id: str | None, verdict: Verdict) -> None:
     """Execute the graduated action ladder — the agent acts, it doesn't just flag.
 
     Philosophy: authenticity matters, but NOT at the cost of the buyer/seller
     community. Counterfeits people regret get locked; knockoffs people love get
     relabeled, not banned. A fraudulent hub triggers immediate ops escalation.
+
+    Confidence floor (counterfeit flow step 4): a HARD lock needs >= MIN_ORDERS_FOR_ACTION
+    orders of evidence OR an overdue quality-check video. Below that we downgrade a
+    `counterfeit_lock` to a reversible `request_qc_video` — never punish on thin data.
     """
     d = verdict.decision
     buyer_msg = verdict.buyer_explanation
@@ -146,10 +167,20 @@ def _execute_action(db, product: Product | None, order_id: str | None, verdict: 
     # ---- product-centric outcomes ----
     if product is not None:
         if d == "counterfeit_lock":
-            product.status = "locked"
-            _log_action(db, product.id, "lock", verdict)
-            _notify(db, "seller", "Listing locked: counterfeit",
-                    f"{product.title}: {buyer_msg}", "high", product.id)
+            order_count = db.query(Order).filter(Order.product_id == product.id).count()
+            floor = risk_checks.order_volume(order_count)
+            qc = risk_checks.qc_sla_status(product)
+            if floor["meets_confidence_floor"] or qc["qc_overdue"]:
+                product.status = "locked"
+                _log_action(db, product.id, "lock", verdict)
+                _notify(db, "seller", "Listing locked: counterfeit",
+                        f"{product.title}: {buyer_msg}", "high", product.id)
+            else:
+                # hard signal but thin evidence -> reversible QC request, not a lock
+                _request_qc(db, product, verdict, buyer_msg)
+
+        elif d == "request_qc_video":
+            _request_qc(db, product, verdict, buyer_msg)
 
         elif d == "relabel_required":
             # keep it live; ask the seller to relabel honestly as a knockoff

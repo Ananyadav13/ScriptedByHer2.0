@@ -48,6 +48,9 @@ class Product(Base):
     status: Mapped[str] = mapped_column(String, default="active")
     knockoff_flag: Mapped[bool] = mapped_column(default=False)  # relabeled as honest knockoff
     buyer_tip: Mapped[str | None] = mapped_column(Text, nullable=True)  # gentle at-purchase note
+    # Counterfeit flow steps 3-4: seller quality-check video request + latency SLA.
+    qc_requested_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    qc_responded: Mapped[bool] = mapped_column(default=False)
 
     seller: Mapped["Seller"] = relationship(back_populates="products")
     reviews: Mapped[list["Review"]] = relationship(back_populates="product")
