@@ -1,181 +1,222 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   api,
   type AdminAction,
+  type Agent2Findings,
+  type Agent2Product,
   type AuditResult,
-  type Hub,
-  type Notification,
 } from "@/lib/api";
-import { actionMeta } from "@/lib/decisions";
+import { actionMeta, statusMeta } from "@/lib/decisions";
 import { Badge, Button, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
 
-const SUMMARY_META: { key: string; label: string; tone: string }[] = [
-  { key: "suspended", label: "Suspended", tone: "text-rose" },
-  { key: "correction_window", label: "Correction", tone: "text-amber" },
-  { key: "logistics_referral", label: "Logistics", tone: "text-teal" },
-  { key: "fix_drafts", label: "Fix drafts", tone: "text-brand-ink" },
-  { key: "kept", label: "Kept", tone: "text-green" },
+const FILTERS = [
+  { key: "all", label: "All issues", types: [] as string[] },
+  { key: "size", label: "Size & measurement", types: ["size_mismatch", "missing_measurements"] },
+  { key: "fabric", label: "Fabric", types: ["fabric_mismatch", "missing_fabric"] },
+  { key: "fraud", label: "Fraud & quality", types: ["fraud_quality"] },
+  { key: "delivery", label: "Delivery", types: ["delivery_fault"] },
 ];
 
-const PRIORITY_TONE: Record<string, "rose" | "amber" | "neutral"> = {
-  immediate: "rose",
-  high: "amber",
-  normal: "neutral",
+const SUMMARY_TILES = [
+  { key: "size_mismatch", label: "Size mismatch", tone: "text-amber" },
+  { key: "missing_measurements", label: "No measurements", tone: "text-amber" },
+  { key: "fabric_mismatch", label: "Fabric issues", tone: "text-teal" },
+  { key: "fraud_quality", label: "Fraud/quality", tone: "text-rose" },
+  { key: "delivery_fault", label: "Delivery faults", tone: "text-teal" },
+];
+
+const ISSUE_TONE: Record<string, "rose" | "amber" | "teal" | "neutral"> = {
+  fraud_quality: "rose",
+  size_mismatch: "amber",
+  fabric_mismatch: "teal",
+  delivery_fault: "teal",
+  missing_measurements: "neutral",
+  missing_fabric: "neutral",
+  missing_video: "neutral",
+  other: "neutral",
 };
 
+function FindingRow({ p }: { p: Agent2Product }) {
+  const sm = statusMeta(p.status);
+  const warns = p.issues.filter((i) => i.severity === "warn");
+  const infos = p.issues.filter((i) => i.severity === "info");
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link href={`/product/${p.product_id}`} className="font-semibold text-ink hover:text-brand-ink hover:underline">
+            {p.title}
+          </Link>
+          <div className="mt-0.5 text-xs text-ink-faint">
+            {p.seller_id} · {p.category}
+            {p.rating != null && p.review_count > 0 && ` · ${p.rating}★ (${p.review_count})`}
+          </div>
+        </div>
+        <Badge tone={sm.tone}>{sm.label}</Badge>
+      </div>
+
+      {/* issue chips */}
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        {warns.map((i, k) => (
+          <Badge key={k} tone={ISSUE_TONE[i.type] ?? "amber"}>
+            ⚠ {i.label}
+            {i.agreement != null && ` · ${Math.round(i.agreement * 100)}%`}
+          </Badge>
+        ))}
+        {infos.map((i, k) => (
+          <Badge key={k} tone="neutral">
+            {i.label}
+          </Badge>
+        ))}
+        {p.issues.length === 0 && <Badge tone="green">✓ clean listing</Badge>}
+      </div>
+
+      {p.fit && (
+        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-teal-wash px-2.5 py-1 text-xs text-teal">
+          📏 {p.fit.note} — fit auto-adjusted at cart
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-2.5 text-xs">
+        <span className="text-ink-faint">
+          Business manager: <span className="font-medium text-ink">{p.manager ?? "—"}</span>
+        </span>
+        {p.escalated ? (
+          <Badge tone="rose">escalated to manager</Badge>
+        ) : (
+          <span className="text-ink-faint">
+            recommended: <span className="font-medium text-ink-soft">{p.recommended_action}</span>
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
-  const [actions, setActions] = useState<AdminAction[] | null>(null);
-  const [notifs, setNotifs] = useState<Notification[]>([]);
-  const [hubs, setHubs] = useState<Hub[]>([]);
+  const [findings, setFindings] = useState<Agent2Findings | null>(null);
+  const [actions, setActions] = useState<AdminAction[]>([]);
   const [audit, setAudit] = useState<AuditResult | null>(null);
+  const [filter, setFilter] = useState("all");
   const [running, setRunning] = useState(false);
 
-  const loadAll = useCallback(async () => {
-    const [a, n, h] = await Promise.allSettled([
-      api.adminActions(50),
-      api.notifications(),
-      api.hubs(),
-    ]);
+  const load = useCallback(async () => {
+    const [f, a] = await Promise.allSettled([api.agent2Findings(), api.adminActions(40)]);
+    if (f.status === "fulfilled") setFindings(f.value);
+    else setFindings({ summary: {}, count: 0, products: [] });
     if (a.status === "fulfilled") setActions(a.value.actions);
-    else setActions([]);
-    if (n.status === "fulfilled") setNotifs(n.value);
-    if (h.status === "fulfilled") setHubs(h.value);
   }, []);
 
   useEffect(() => {
-    loadAll();
-  }, [loadAll]);
+    load();
+  }, [load]);
 
   const runAudit = async () => {
     setRunning(true);
     try {
-      const r = await api.audit(false); // deterministic sweep — fast, no LLM quota
-      setAudit(r);
-      await loadAll();
-    } catch {
-      // ignore — surfaced via empty state
+      setAudit(await api.audit(false));
+      await load();
     } finally {
       setRunning(false);
     }
   };
 
+  const shown = useMemo(() => {
+    if (!findings) return [];
+    const f = FILTERS.find((x) => x.key === filter)!;
+    if (f.types.length === 0) return findings.products.filter((p) => p.issues.length > 0);
+    return findings.products.filter((p) => p.issues.some((i) => f.types.includes(i.type)));
+  }, [findings, filter]);
+
   return (
     <Page>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <SectionTitle
-          eyebrow="Agent 2 · catalog integrity"
-          title="Admin console"
-          sub="Sweep the catalog, route each listing fairly, and watch the action queue fill."
+          eyebrow="Agent 2 · Listing & Catalog Integrity"
+          title="Catalog integrity console"
+          sub="An ambient, deterministic sweep flags every listing's issues — size/measurement gaps, fabric mismatches, fraud clusters — and escalates them to the owning business manager."
         />
         <Button onClick={runAudit} disabled={running}>
-          {running ? <Spinner /> : "🗂️"} Run catalog audit
+          {running ? <Spinner /> : "⚙️"} Run catalog audit
         </Button>
       </div>
 
-      {audit && (
-        <Card className="mb-6 p-5">
-          <div className="mb-3 text-sm font-medium text-ink">
-            Audit swept {audit.evaluated} active listings
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-            {SUMMARY_META.map((s) => (
-              <div key={s.key} className="rounded-xl border border-line p-3 text-center">
-                <div className={`text-2xl font-bold ${s.tone}`}>{audit.summary[s.key] ?? 0}</div>
-                <div className="text-xs text-ink-faint">{s.label}</div>
-              </div>
-            ))}
-          </div>
-          <p className="mt-3 text-xs text-ink-faint">
-            Fraud suspended · fixable listings drafted a correction · delivery faults referred to
-            logistics with <b>no seller penalty</b>.
-          </p>
-        </Card>
+      {/* summary tiles */}
+      {findings && (
+        <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {SUMMARY_TILES.map((t) => (
+            <Card key={t.key} className="p-3 text-center">
+              <div className={`text-2xl font-bold ${t.tone}`}>{findings.summary[t.key] ?? 0}</div>
+              <div className="text-xs text-ink-faint">{t.label}</div>
+            </Card>
+          ))}
+        </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-        {/* Action queue */}
+      {audit && (
+        <div className="mb-5 rounded-xl bg-brand-wash px-4 py-3 text-sm text-brand-ink">
+          Audit applied — suspended {audit.summary.suspended ?? 0} · correction window{" "}
+          {audit.summary.correction_window ?? 0} · logistics {audit.summary.logistics_referral ?? 0} · fix drafts{" "}
+          {audit.summary.fix_drafts ?? 0} · kept {audit.summary.kept ?? 0}.
+        </div>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        {/* findings */}
         <div>
-          <h2 className="mb-3 font-semibold text-ink">Action queue</h2>
-          {actions === null && <Spinner />}
-          {actions !== null && actions.length === 0 && (
-            <Empty>No catalog actions yet. Run an audit or trigger an investigation.</Empty>
-          )}
-          <div className="space-y-2.5">
-            {actions?.map((a) => {
-              const am = actionMeta(a.action);
-              return (
-                <Card key={a.id} className="p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Badge tone={am.tone}>{am.label}</Badge>
-                      {a.tier && <Badge tone="neutral">{a.tier}</Badge>}
-                      {a.seller_approved && <Badge tone="green">approved</Badge>}
-                    </div>
-                    <span className="text-xs text-ink-faint">
-                      {new Date(a.created_at).toLocaleTimeString()}
-                    </span>
-                  </div>
-                  <div className="mt-2 text-sm font-medium text-ink">
-                    {a.product_title ? (
-                      <Link href={`/product/${a.product_id}`} className="hover:text-brand-ink hover:underline">
-                        {a.product_title}
-                      </Link>
-                    ) : (
-                      a.product_id
-                    )}
-                    {a.seller_id && <span className="ml-2 text-xs text-ink-faint">{a.seller_id}</span>}
-                  </div>
-                  {a.reason && <p className="mt-1 text-sm text-ink-soft">{a.reason}</p>}
-                </Card>
-              );
-            })}
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                  filter === f.key ? "bg-brand text-white" : "border border-line bg-surface text-ink-soft hover:bg-[#f2f3f8]"
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          {findings === null && <Spinner />}
+          {findings !== null && shown.length === 0 && <Empty>No listings with issues in this view.</Empty>}
+          <div className="space-y-3">
+            {shown.map((p) => (
+              <FindingRow key={p.product_id} p={p} />
+            ))}
           </div>
         </div>
 
-        {/* Ops sidebar */}
-        <div className="space-y-6">
-          <div>
-            <h2 className="mb-3 font-semibold text-ink">Notifications</h2>
-            {notifs.length === 0 ? (
-              <Empty>No notifications.</Empty>
-            ) : (
-              <div className="space-y-2.5">
-                {notifs.slice(0, 8).map((n) => (
-                  <Card key={n.id} className="p-3.5">
+        {/* recent actions */}
+        <div>
+          <h2 className="mb-3 font-semibold text-ink">Recent agent actions</h2>
+          {actions.length === 0 ? (
+            <Empty>No actions yet — run the audit.</Empty>
+          ) : (
+            <div className="space-y-2.5">
+              {actions.slice(0, 12).map((a) => {
+                const am = actionMeta(a.action);
+                return (
+                  <Card key={a.id} className="p-3.5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-ink">{n.subject}</span>
-                      <Badge tone={PRIORITY_TONE[n.priority] ?? "neutral"}>{n.priority}</Badge>
+                      <Badge tone={am.tone}>{am.label}</Badge>
+                      {a.tier && <span className="text-[11px] text-ink-faint">{a.tier}</span>}
                     </div>
-                    <p className="mt-1 text-xs text-ink-soft">{n.body}</p>
-                    <span className="mt-1 block text-[10px] uppercase tracking-wide text-ink-faint">
-                      → {n.audience}
-                    </span>
+                    <div className="mt-1.5 text-sm font-medium text-ink">
+                      {a.product_title ?? a.product_id}
+                    </div>
+                    {a.reason && <p className="mt-0.5 line-clamp-2 text-xs text-ink-soft">{a.reason}</p>}
                   </Card>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h2 className="mb-3 font-semibold text-ink">Delivery hubs</h2>
-            <Card className="divide-y divide-line">
-              {hubs.length === 0 && <div className="p-4 text-sm text-ink-faint">No hub data.</div>}
-              {hubs.map((h) => (
-                <div key={h.id} className="flex items-center justify-between p-3.5">
-                  <div>
-                    <div className="text-sm font-medium text-ink">{h.name}</div>
-                    <div className="text-xs text-ink-faint">{h.region}</div>
-                  </div>
-                  <Badge tone={h.case_count >= 5 ? "rose" : h.case_count > 0 ? "amber" : "green"}>
-                    {h.case_count} cases
-                  </Badge>
-                </div>
-              ))}
-            </Card>
-          </div>
+                );
+              })}
+            </div>
+          )}
+          <Link href="/manager" className="mt-4 inline-block text-sm font-medium text-brand-ink hover:underline">
+            See the business-manager queue →
+          </Link>
         </div>
       </div>
     </Page>

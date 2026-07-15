@@ -17,7 +17,7 @@ const NAV = [
   { href: "/cart", label: "Cart" },
   { href: "/seller", label: "Sell" },
   { href: "/manager", label: "Manager" },
-  { href: "/admin", label: "Admin" },
+  { href: "/admin", label: "Catalog" },
 ];
 
 function Logo() {

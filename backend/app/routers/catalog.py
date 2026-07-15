@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from ..agents import agent2, events
 from ..agents.orchestrator import run_investigation
 from ..db import get_db
-from ..models import CatalogAction, Investigation, Notification, Product
+from ..models import CatalogAction, Investigation, Manager, Notification, Product, SizeDrift
 from ..services import delisting, fit_prediction, mandatory_fields, tripwires
 
 router = APIRouter(tags=["catalog"])
@@ -137,6 +137,90 @@ def run_audit(body: AuditIn | None = None, db: Session = Depends(get_db)):
 
     db.commit()
     return {"summary": summary, "evaluated": len(products), "items": items}
+
+
+# ---------------------------------------------------------------------------
+# GET /agent2/findings — Agent 2's catalog-integrity view (DETERMINISTIC, no LLM)
+# Lists every product's listing-integrity issues (size/measurement/fabric/fraud/
+# delivery) and whether it's been escalated to the owning business manager.
+# ---------------------------------------------------------------------------
+_ESCALATED_STATUSES = {"locked", "on_hold", "suspended", "needs_info", "flagged", "correction_window"}
+_CLUSTER_ISSUE = {
+    "size_issue": ("size_mismatch", "Size / fit mismatch reported"),
+    "fabric_mismatch": ("fabric_mismatch", "Fabric not as described"),
+    "damaged_delivery": ("delivery_fault", "Damaged-in-delivery reports"),
+    "possible_fraud": ("fraud_quality", "Fraud / quality complaints"),
+    "other": ("other", "Assorted complaints"),
+}
+_MISSING_LABEL = {
+    "size_chart_json": ("missing_measurements", "No size chart / measurements given"),
+    "fabric_claim": ("missing_fabric", "No fabric / material specified"),
+    "listing_video_path": ("missing_video", "No listing video (canonical reference)"),
+}
+
+
+@router.get("/agent2/findings")
+def agent2_findings(db: Session = Depends(get_db)):
+    products = db.query(Product).all()
+    managers = {m.id: m.name for m in db.query(Manager).all()}
+    out = []
+    summary = {"size_mismatch": 0, "missing_measurements": 0, "fabric_mismatch": 0,
+               "fraud_quality": 0, "delivery_fault": 0, "clean": 0}
+
+    for p in products:
+        issues = []
+        # (a) mandatory-fields gate — missing size chart / fabric / video
+        gate = mandatory_fields.check_product(p)
+        for f in gate["missing"]:
+            key, label = _MISSING_LABEL.get(f, (f, f))
+            issues.append({"type": key, "label": label, "severity": "info"})
+
+        # (b) complaint clustering (deterministic keyword classifier)
+        cl = delisting.classify_complaints(p)
+        if cl["dominant"] and cl["negative_count"] > 0:
+            key, label = _CLUSTER_ISSUE.get(cl["dominant"], ("other", "Complaints"))
+            issues.append({
+                "type": key, "label": label, "severity": "warn",
+                "agreement": cl["agreement"], "complaints": cl["negative_count"],
+                "detail": f"{int(cl['agreement'] * 100)}% of {cl['negative_count']} negative reviews agree",
+            })
+
+        # (c) size-drift intelligence available (Agent 2 fit prediction source)
+        drift = (
+            db.query(SizeDrift)
+            .filter(SizeDrift.brand == p.brand, SizeDrift.category == p.category)
+            .first()
+        )
+        fit = None
+        if drift is not None:
+            dirn = "small" if drift.true_measurement_delta < 0 else "large"
+            fit = {"runs": dirn, "delta": drift.true_measurement_delta, "sample": drift.sample_size,
+                   "note": f"Brand runs {abs(drift.true_measurement_delta):g} size {dirn} ({drift.sample_size} returns)"}
+
+        ev = delisting.evaluate_delisting(p)
+        seller = p.seller
+        manager_name = managers.get(seller.manager_id) if seller else None
+
+        for i in issues:
+            if i["type"] in summary:
+                summary[i["type"]] += 1
+        if not issues:
+            summary["clean"] += 1
+
+        out.append({
+            "product_id": p.id, "title": p.title, "seller_id": p.seller_id,
+            "category": p.category, "status": p.status,
+            "rating": ev["trustworthy_rating"], "review_count": ev["review_count"],
+            "manager": manager_name,
+            "escalated": p.status in _ESCALATED_STATUSES,
+            "issues": issues,
+            "fit": fit,
+            "recommended_action": ev["action"] if ev["delist"] else ("hold" if issues else "keep"),
+        })
+
+    # products with issues first, most severe complaints first
+    out.sort(key=lambda r: (0 if r["issues"] else 1, -len(r["issues"])))
+    return {"summary": summary, "count": len(out), "products": out}
 
 
 # ---------------------------------------------------------------------------

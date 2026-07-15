@@ -12,7 +12,6 @@ import {
   ratingSummary,
   ratingTone,
   reviewDisplay,
-  reviewPhotos,
   sellerInfo,
   sizeChart,
   sizeOptions,
@@ -213,9 +212,9 @@ export function ProductView({
       <div className="border-t-8 border-[#f2f2f7] px-4 py-4">
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-md bg-brand-wash px-2 py-0.5 text-xs font-bold text-brand-ink">
-            🛡 Build Trust
+            🛡 Agent 1 · Verification
           </span>
-          <span className="text-xs text-ink-faint">AI integrity check</span>
+          <span className="text-xs text-ink-faint">fires on Buy Now — authenticity & disputes</span>
         </div>
         <VerifyPanel productId={p.id} title={p.title} />
       </div>
@@ -294,7 +293,7 @@ export function ProductView({
             <div className="flex gap-2 overflow-x-auto">
               {photoReviews.slice(0, 5).map((r) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={r.id} src={reviewPhotos(r.id, 1)[0]} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" />
+                <img key={r.id} src={`/products/${p.id}.jpg`} alt="" className="h-16 w-16 shrink-0 rounded-md bg-[#f2f2f7] object-contain" />
               ))}
               {photoReviews.length > 5 && (
                 <div className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-black/70 text-xs font-semibold text-white">
@@ -326,9 +325,9 @@ export function ProductView({
                 <p className="mt-1.5 text-sm text-ink-soft">{r.text}</p>
                 {d.photos > 0 && (
                   <div className="mt-2 flex gap-2">
-                    {reviewPhotos(r.id, d.photos).map((src, i) => (
+                    {Array.from({ length: d.photos }).map((_, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img key={i} src={src} alt="" className="h-14 w-14 rounded-md object-cover" />
+                      <img key={i} src={`/products/${p.id}.jpg`} alt="" className="h-14 w-14 rounded-md bg-[#f2f2f7] object-contain" />
                     ))}
                   </div>
                 )}

@@ -98,6 +98,8 @@ export const api = {
     }).then(j<AuditResult>),
   adminActions: (limit = 100) =>
     fetch(`${API}/admin/actions?limit=${limit}`, { cache: "no-store" }).then(j<AdminActions>),
+  agent2Findings: () =>
+    fetch(`${API}/agent2/findings`, { cache: "no-store" }).then(j<Agent2Findings>),
   sellerDrafts: (seller_id: string) =>
     fetch(`${API}/seller/${seller_id}/drafts`, { cache: "no-store" }).then(j<DraftsResult>),
   approveDraft: (action_id: string) =>
@@ -199,3 +201,31 @@ export type Notification = {
   created_at: string;
 };
 export type Hub = { id: string; name: string; region: string; score: number; case_count: number };
+
+export type Agent2Issue = {
+  type: string;
+  label: string;
+  severity: "info" | "warn";
+  agreement?: number;
+  complaints?: number;
+  detail?: string;
+};
+export type Agent2Product = {
+  product_id: string;
+  title: string;
+  seller_id: string;
+  category: string;
+  status: string;
+  rating: number | null;
+  review_count: number;
+  manager: string | null;
+  escalated: boolean;
+  issues: Agent2Issue[];
+  fit: { runs: string; delta: number; sample: number; note: string } | null;
+  recommended_action: string;
+};
+export type Agent2Findings = {
+  summary: Record<string, number>;
+  count: number;
+  products: Agent2Product[];
+};

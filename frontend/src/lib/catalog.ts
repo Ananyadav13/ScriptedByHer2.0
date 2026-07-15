@@ -145,13 +145,6 @@ export function ratingSummary(reviews: Review[]) {
   };
 }
 
-// deterministic buyer-photo picks from /public/reviews/r{1..5}.jpg
-const REVIEW_PHOTO_POOL = 5;
-export function reviewPhotos(reviewId: string, count: number): string[] {
-  const h = hash(reviewId);
-  return Array.from({ length: count }, (_, i) => `/reviews/r${((h + i) % REVIEW_PHOTO_POOL) + 1}.jpg`);
-}
-
 export function payLater(price: number): number {
   return Math.max(1, Math.round(price * 0.88));
 }
