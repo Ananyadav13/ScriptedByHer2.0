@@ -18,8 +18,9 @@ from ..models import CatalogAction, Manager, Product, Seller
 
 router = APIRouter(tags=["manager"])
 
-# statuses that represent an agent action awaiting managerial review
-_QUEUE_STATUSES = {"locked", "on_hold", "suspended"}
+# statuses that represent an agent action awaiting managerial review.
+# `flagged`/`needs_info` are ADVISORY (sale continues); locked/on_hold/suspended are protective.
+_QUEUE_STATUSES = {"locked", "on_hold", "suspended", "needs_info", "flagged"}
 
 
 @router.get("/managers")

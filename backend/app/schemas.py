@@ -6,12 +6,16 @@ from pydantic import BaseModel
 class Verdict(BaseModel):
     # decision: counterfeit_lock | request_qc_video | relabel_required | notify_only |
     #           hold_pending_fix | ban | refund_fast_track | standard_process |
-    #           manual_review | cleared | authentic
+    #           manual_review | recommend_review | cleared | authentic
     decision: str
     confidence: float
     evidence: list[str]
     action: str
     buyer_explanation: str
+    # Advisory fields — populated when the agent RECOMMENDS to the manager rather than
+    # acting (esp. uncertain media comparisons). Empty for autonomous outcomes.
+    recommended_action: str = ""
+    suggested_remedy: str = ""
 
 
 # ---- API response DTOs ----

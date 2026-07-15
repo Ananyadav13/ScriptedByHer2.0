@@ -91,11 +91,13 @@ def _seed(db):
                 title="Oversized Cotton T-Shirt (Viral)", brand="TrendyThreads", category="apparel",
                 price=499, mrp=999, images=["tshirt_real.jpg"],
                 fabric_claim="100% cotton", status="active"),
-        # 3. Fabric mismatch: claims cotton, reviews say synthetic (video in Phase 3)
+        # 3. Fabric mismatch: claims cotton, reviews say synthetic (hybrid media, Phase 3).
+        #    listing_video_path = the seller's authentic listing video (reference); left
+        #    None until a real recording is dropped into media/videos/ (e.g. "kurti_listing.mp4").
         Product(id="prod_fabric_kurti", seller_id="seller_kurti",
                 title="Pure Cotton Anarkali Kurti", brand="EthnicWeave", category="apparel",
                 price=799, mrp=1599, images=["kurti.jpg"],
-                fabric_claim="pure cotton", status="active",
+                fabric_claim="pure cotton", status="active", listing_video_path=None,
                 size_chart_json={"S": "36", "M": "38", "L": "40"}),
         # 4. Size drift: brand runs small (see SizeDrift + buyer history)
         Product(id="prod_size_shoes", seller_id="seller_shoes",
@@ -216,6 +218,13 @@ def _seed(db):
         Order(id="order_serial", buyer_id="buyer_serial_claimer", product_id="prod_fabric_kurti",
               hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(1),
               hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"),
+        # clean buyer, material dispute ("received synthetic, not cotton") WITH photo/video
+        # evidence -> hybrid check_media_evidence -> ADVISORY recommend_review to the manager.
+        # buyer_evidence_json holds media paths; left empty until real buyer media is supplied.
+        Order(id="order_fabric_dispute", buyer_id="buyer_normal", product_id="prod_fabric_kurti",
+              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(2),
+              hub_anomaly_flag=False, geo_photo_verified=True, buyer_evidence_json=[],
+              status="delivered"),
     ]
     # Order volume for the counterfeit so it clears the confidence floor
     # (>= MIN_ORDERS_FOR_ACTION) and still HARD-locks — a fake watch 24 people

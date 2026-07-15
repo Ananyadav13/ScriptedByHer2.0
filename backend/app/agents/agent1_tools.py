@@ -49,23 +49,29 @@ CHECK_DELIVERY_SIGNALS = types.FunctionDeclaration(
     ),
 )
 
-CHECK_VIDEO_REVIEWS = types.FunctionDeclaration(
-    name="check_video_reviews",
+CHECK_MEDIA_EVIDENCE = types.FunctionDeclaration(
+    name="check_media_evidence",
     description=(
-        "Vision scan of the product's customer REVIEW VIDEOS: reports the observed "
-        "material/fabric vs the listing's claim and the share of frames that "
-        "contradict it. Call ONLY when a fabric/material/quality claim is in doubt "
-        "(low trustworthy rating on a product making a material claim, or reviews "
-        "alleging the item differs from the description) — not on every product."
+        "ADVISORY vision scan. Compares the seller's authentic LISTING video (reference) "
+        "against the buyer's complaint evidence (photo or video); when there is no "
+        "reference it checks the review media against the listing's material claim. "
+        "Returns concrete discrepancies, a mismatch share, a CONFIDENCE, and a "
+        "recommended next step + suggested remedy for the product manager. Call ONLY "
+        "when a material/quality claim is in doubt (a material dispute with buyer media, "
+        "or a low trustworthy rating on a product making a material claim). This tool "
+        "NEVER decides a punishment — it produces a recommendation."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
-        properties={"product_id": _str_param("The product whose review videos to scan.")},
+        properties={
+            "product_id": _str_param("The product to inspect."),
+            "order_id": _str_param("Optional: the disputed order whose buyer evidence to use."),
+        },
         required=["product_id"],
     ),
 )
 
-DECLARATIONS = [CHECK_CATALOG_RISK, CHECK_SELLER_PROFILE, CHECK_DELIVERY_SIGNALS, CHECK_VIDEO_REVIEWS]
+DECLARATIONS = [CHECK_CATALOG_RISK, CHECK_SELLER_PROFILE, CHECK_DELIVERY_SIGNALS, CHECK_MEDIA_EVIDENCE]
 TOOL = types.Tool(function_declarations=DECLARATIONS)
 
 
@@ -99,7 +105,7 @@ def dispatch(name: str, args: dict, db) -> dict:
         buyer = db.get(Buyer, order.buyer_id)
         hub = db.get(Hub, order.hub_id) if order.hub_id else None
         return risk_checks.delivery_signals(order, buyer, hub)
-    if name == "check_video_reviews":
+    if name == "check_media_evidence":
         from . import vision  # lazy: keeps the deterministic tools LLM-free at import
-        return vision.analyze_video_reviews(args["product_id"], db)
+        return vision.check_media_evidence(args["product_id"], db, args.get("order_id"))
     return {"error": f"unknown tool {name}"}

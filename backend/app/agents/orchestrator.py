@@ -129,11 +129,18 @@ def _notify(db, audience: str, subject: str, body: str,
 
 
 def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
+    evidence = {"decision": verdict.decision, "evidence": verdict.evidence,
+                "confidence": verdict.confidence}
+    # advisory recommendations carry the manager-facing next step + remedy
+    if verdict.recommended_action:
+        evidence["recommended_action"] = verdict.recommended_action
+    if verdict.suggested_remedy:
+        evidence["suggested_remedy"] = verdict.suggested_remedy
     db.add(CatalogAction(
         id=f"act_{uuid.uuid4().hex[:12]}",
         product_id=product_id,
         action=action,
-        evidence_json={"decision": verdict.decision, "evidence": verdict.evidence},
+        evidence_json=evidence,
         created_at=datetime.utcnow(),
     ))
 
@@ -181,6 +188,16 @@ def _execute_action(db, product: Product | None, order_id: str | None, verdict: 
 
         elif d == "request_qc_video":
             _request_qc(db, product, verdict, buyer_msg)
+
+        elif d == "recommend_review":
+            # ADVISORY: uncertain (media) evidence -> recommend to the manager, do NOT
+            # punish. Soft `flagged` status keeps the sale live (no buyer impact); the
+            # recommendation + remedy ride in the catalog action for the manager queue.
+            product.status = "flagged"
+            _log_action(db, product.id, "recommend_review", verdict)
+            _notify(db, "support", "Agent recommendation: manager review",
+                    f"{product.title}: {verdict.recommended_action or 'review'} — "
+                    f"{verdict.suggested_remedy or buyer_msg}", "normal", product.id)
 
         elif d == "relabel_required":
             # keep it live; ask the seller to relabel honestly as a knockoff

@@ -195,6 +195,19 @@ These feed the **tripwire** triggers (see PLAN §5A: event-driven, not polling):
 
 ---
 
+## 8. Hybrid media evidence + advisory agent (15 Jul 2026 — see PLAN.md §5B)
+
+Buyer review-videos are too scarce to depend on, so evidence is **hybrid** and the agent is **advisory** on it.
+
+- **Seller listing video** (`Product.listing_video_path`): a 5–15s authentic video recorded at listing, the **canonical reference**. Required by the Agent-2 mandatory-fields gate (with size chart / measurements / fabric).
+- **Buyer evidence** (`Order.buyer_evidence_json`): **photo OR video** supplied on a complaint. `check_media_evidence(product_id, order_id?)` compares reference ↔ evidence (or evidence ↔ `fabric_claim` when there's no reference), reusing `PHOTO_MISMATCH_SHARE` (0.40) for the mismatch flag and emitting a **`confidence`**.
+- **Advisory, not binding.** Media comparison is uncertain (item may not have reached the buyer; lighting; wear), so Agent 1 returns **`decision = recommend_review`** with `recommended_action` + `suggested_remedy` (new `Verdict` fields) and routes it to the **manager queue** as a soft **`flagged`** status — *the sale continues, no buyer impact.* Only deterministic hard signals (price + burst + no genuine reviews) take an interim protective lock, which the manager still confirms. Agents recommend; managers decide.
+- **Statuses:** `flagged` (advisory, non-restrictive) vs the restrictive `locked`/`on_hold`/`needs_info`/`suspended`.
+
+*Storage (production concern, not in the demo DB): object store + keyframes/embeddings as the working set, archive/discard raw video, LLM only on tripwire. See PLAN.md §5B.*
+
+---
+
 *Tuning note: these are market-sensible defaults, not empirical fits — in production each
 threshold is calibrated against labelled outcomes. All live in `rules.py`; tuning is a
 one-line change with no logic edits.*

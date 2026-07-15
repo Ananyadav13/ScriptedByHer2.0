@@ -26,7 +26,8 @@ router = APIRouter(tags=["disputes"])
 
 class DisputeIn(BaseModel):
     order_id: str
-    claim_type: str = "item_not_as_described"  # free-form buyer claim category
+    claim_type: str = "item_not_as_described"   # free-form buyer claim category
+    evidence_paths: list[str] = []              # buyer media (photos OR videos) for this claim
 
 
 @router.post("/dispute")
@@ -34,6 +35,11 @@ def open_dispute(body: DisputeIn, background: BackgroundTasks, db: Session = Dep
     order = db.get(Order, body.order_id)
     if not order:
         raise HTTPException(404, "order not found")
+
+    # attach buyer evidence so check_media_evidence can compare it to the listing video
+    if body.evidence_paths:
+        order.buyer_evidence_json = list(body.evidence_paths)
+        db.commit()
 
     inv_id = f"inv_{uuid.uuid4().hex[:12]}"
     db.add(Investigation(

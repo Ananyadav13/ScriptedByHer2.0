@@ -13,7 +13,9 @@ from ..schemas import ProductDetail, ProductOut
 
 router = APIRouter(prefix="/products", tags=["products"])
 
-# statuses where a buyer/seller should see WHY the listing is restricted
+# statuses where a buyer/seller should see WHY the listing is restricted.
+# NOTE: `flagged` is deliberately NOT here — it's an advisory manager recommendation,
+# the sale continues with no buyer-facing restriction (PLAN.md §5B).
 _RESTRICTED = {"locked", "on_hold", "needs_info", "suspended"}
 
 

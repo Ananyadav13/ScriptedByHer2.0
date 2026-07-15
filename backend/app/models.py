@@ -44,7 +44,10 @@ class Product(Base):
     images: Mapped[list] = mapped_column(JSON, default=list)
     size_chart_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     fabric_claim: Mapped[str | None] = mapped_column(String, nullable=True)
-    # active/locked/delisted/correction_window/suspended/on_hold/needs_info
+    # seller's authentic listing-time video (the canonical reference for media compare)
+    listing_video_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # active/locked/delisted/correction_window/suspended/on_hold/needs_info/flagged
+    # `flagged` = agent RECOMMENDS manager review (advisory) — sale continues, no buyer impact
     status: Mapped[str] = mapped_column(String, default="active")
     knockoff_flag: Mapped[bool] = mapped_column(default=False)  # relabeled as honest knockoff
     buyer_tip: Mapped[str | None] = mapped_column(Text, nullable=True)  # gentle at-purchase note
@@ -105,6 +108,8 @@ class Order(Base):
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     hub_anomaly_flag: Mapped[bool] = mapped_column(default=False)
     geo_photo_verified: Mapped[bool] = mapped_column(default=False)  # geo-tagged proof-of-delivery
+    # buyer-supplied dispute evidence: list of media paths (photos OR videos)
+    buyer_evidence_json: Mapped[list] = mapped_column(JSON, default=list)
     status: Mapped[str] = mapped_column(String, default="delivered")  # delivered/refunded/manual_review
 
 
