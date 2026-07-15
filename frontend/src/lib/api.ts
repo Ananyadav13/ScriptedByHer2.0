@@ -22,6 +22,8 @@ export type Product = {
   status: string;
   knockoff_flag: boolean;
   buyer_tip: string | null;
+  rating: number;
+  rating_count: number;
 };
 
 export type ProductDetail = Product & {

@@ -46,9 +46,22 @@ def _latest_decision_action(db: Session, product_id: str) -> CatalogAction | Non
     return rows[0] if rows else None
 
 
+def _rating(p: Product) -> tuple[float, int]:
+    revs = p.reviews or []
+    n = len(revs)
+    if not n:
+        return 0.0, 0
+    return round(sum(r.rating for r in revs) / n, 1), n
+
+
 @router.get("", response_model=list[ProductOut])
 def list_products(db: Session = Depends(get_db)):
-    return db.query(Product).all()
+    out = []
+    for p in db.query(Product).all():
+        dto = ProductOut.model_validate(p)
+        dto.rating, dto.rating_count = _rating(p)
+        out.append(dto)
+    return out
 
 
 @router.get("/{product_id}", response_model=ProductDetail)
@@ -58,6 +71,7 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "product not found")
 
     detail = ProductDetail.model_validate(p)
+    detail.rating, detail.rating_count = _rating(p)
     detail.qc_requested = p.qc_requested_at is not None and not p.qc_responded
     if p.status in _RESTRICTED:
         last = _latest_decision_action(db, product_id)

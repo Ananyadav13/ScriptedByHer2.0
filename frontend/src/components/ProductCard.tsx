@@ -1,51 +1,69 @@
 import Link from "next/link";
 import type { Product } from "@/lib/api";
-import { statusMeta } from "@/lib/decisions";
+import { payLater } from "@/lib/catalog";
 
 function money(n: number) {
   return "₹" + Math.round(n).toLocaleString("en-IN");
 }
+function compact(n: number) {
+  if (n >= 100000) return (n / 100000).toFixed(1).replace(/\.0$/, "") + " L";
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
 
-// Meesho-style catalog tile: photo, price/MRP, discount, and a Build Trust status pill.
-export function ProductCard({ p }: { p: Product }) {
+// Meesho catalogue tile: photo, title, price/off, Pay Later, green rating pill, wishlist heart.
+export function ProductCard({ p, sponsored }: { p: Product; sponsored?: boolean }) {
   const discount = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
-  const sm = statusMeta(p.status);
+  const rating = p.rating > 0 ? p.rating : 4;
   const trusted = p.status === "active";
   return (
     <Link href={`/product/${p.id}`} className="group block">
-      <div className="overflow-hidden rounded-xl bg-surface shadow-[0_1px_3px_rgba(28,28,40,0.08)] transition group-hover:shadow-md">
-        <div className="relative aspect-square overflow-hidden bg-[#f2f2f7]">
+      <div className="overflow-hidden rounded-lg bg-surface shadow-[0_1px_4px_rgba(28,28,40,0.1)] transition group-hover:shadow-md">
+        <div className="relative aspect-[3/4] overflow-hidden bg-[#f2f2f7]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/products/${p.id}.jpg`}
             alt={p.title}
-            className="h-full w-full object-cover transition group-hover:scale-105"
+            className="h-full w-full object-cover transition group-hover:scale-[1.03]"
             loading="lazy"
           />
-          <span
-            className={`absolute left-2 top-2 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
-              trusted ? "bg-white/90 text-green" : "bg-white/90 text-rose"
-            }`}
-          >
-            {trusted ? "✓ Trust verified" : sm.label}
+          <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-ink-soft shadow-sm">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path
+                d="M12 20s-7-4.35-9.5-8.5C1 8.5 2.5 5.5 5.5 5.5 7.5 5.5 9 7 12 9c3-2 4.5-3.5 6.5-3.5 3 0 4.5 3 3 6C19 15.65 12 20 12 20Z"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              />
+            </svg>
           </span>
-          {discount > 0 && (
-            <span className="absolute bottom-0 left-0 bg-brand px-2 py-0.5 text-[11px] font-bold text-white">
-              {discount}% off
+          {trusted && (
+            <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded bg-white/95 px-1.5 py-0.5 text-[10px] font-bold text-brand-ink shadow-sm">
+              🛡 Trust
             </span>
           )}
         </div>
-        <div className="p-2.5">
-          <h3 className="line-clamp-1 text-sm text-ink-soft">{p.title}</h3>
+        <div className="p-2">
+          <h3 className="line-clamp-2 min-h-[2.2em] text-[13px] leading-tight text-ink-soft">{p.title}</h3>
           <div className="mt-1 flex items-baseline gap-1.5">
-            <span className="text-base font-bold text-ink">{money(p.price)}</span>
-            {discount > 0 && <span className="text-xs text-ink-faint line-through">{money(p.mrp)}</span>}
+            <span className="text-[15px] font-bold text-ink">{money(p.price)}</span>
+            {discount > 0 && (
+              <>
+                <span className="text-[11px] text-ink-faint line-through">{money(p.mrp)}</span>
+                <span className="text-[11px] font-semibold text-green">{discount}% off</span>
+              </>
+            )}
+          </div>
+          <div className="mt-1 inline-flex items-center rounded bg-[#f2f2f7] px-1.5 py-0.5 text-[11px] text-ink-soft">
+            ₹{payLater(p.price)} with Pay Later
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
             <span className="inline-flex items-center gap-0.5 rounded bg-green px-1.5 py-0.5 text-[11px] font-semibold text-white">
-              4.3 ★
+              {rating.toFixed(1)} ★
             </span>
-            <span className="text-[11px] text-ink-faint">Free Delivery</span>
+            {p.rating_count > 0 && (
+              <span className="text-[11px] text-ink-faint">({compact(p.rating_count)})</span>
+            )}
+            {sponsored && <span className="ml-auto text-[10px] text-ink-faint">Ad</span>}
           </div>
         </div>
       </div>

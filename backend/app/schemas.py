@@ -43,6 +43,8 @@ class ProductOut(BaseModel):
     status: str
     knockoff_flag: bool = False
     buyer_tip: str | None = None
+    rating: float = 0.0          # avg star rating (computed from reviews)
+    rating_count: int = 0        # number of ratings/reviews
 
     class Config:
         from_attributes = True
