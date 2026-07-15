@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Product } from "@/lib/api";
 import { payLater, ratingTone } from "@/lib/catalog";
+import { PRODUCT_IMAGES } from "@/lib/productImages";
 
 function money(n: number) {
   return "₹" + Math.round(n).toLocaleString("en-IN");
@@ -22,9 +23,9 @@ export function ProductCard({ p, sponsored }: { p: Product; sponsored?: boolean 
         <div className="relative aspect-[3/4] overflow-hidden bg-[#f2f2f7]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={`/products/${p.id}.jpg`}
+            src={(PRODUCT_IMAGES[p.id] ?? [`/products/${p.id}.jpg`])[0]}
             alt={p.title}
-            className="h-full w-full object-cover transition group-hover:scale-[1.03]"
+            className="h-full w-full bg-white object-contain transition group-hover:scale-[1.03]"
             loading="lazy"
           />
           <span className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-ink-soft shadow-sm">

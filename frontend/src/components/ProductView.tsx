@@ -18,6 +18,7 @@ import {
 } from "@/lib/catalog";
 import { VerifyPanel } from "@/components/VerifyPanel";
 import { DisputeCard } from "@/components/DisputeCard";
+import { PRODUCT_IMAGES } from "@/lib/productImages";
 
 const money = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 const compact = (n: number) =>
@@ -66,6 +67,9 @@ export function ProductView({
   const [showChart, setShowChart] = useState(false);
   const sm = statusMeta(p.status);
 
+  const imgs = PRODUCT_IMAGES[p.id] ?? [`/products/${p.id}.jpg`];
+  const [img, setImg] = useState(0);
+
   return (
     <div className="mx-auto max-w-2xl bg-surface pb-24">
       {/* status banner */}
@@ -87,24 +91,34 @@ export function ProductView({
       {/* gallery */}
       <div className="relative bg-[#f7f7fb]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={`/products/${p.id}.jpg`} alt={p.title} className="mx-auto aspect-square w-full max-w-md object-contain" />
-        <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
-          {[0, 1, 2, 3].map((i) => (
-            <span key={i} className={`h-1.5 rounded-full ${i === 0 ? "w-4 bg-brand" : "w-1.5 bg-line"}`} />
+        <img src={imgs[img]} alt={p.title} className="mx-auto aspect-square w-full max-w-md object-contain" />
+        {imgs.length > 1 && (
+          <div className="absolute bottom-3 left-1/2 flex -translate-x-1/2 gap-1.5">
+            {imgs.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setImg(i)}
+                aria-label={`Image ${i + 1}`}
+                className={`h-1.5 rounded-full transition ${i === img ? "w-4 bg-brand" : "w-1.5 bg-line"}`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      {imgs.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
+          {imgs.map((src, i) => (
+            <button
+              key={i}
+              onClick={() => setImg(i)}
+              className={`shrink-0 overflow-hidden rounded-md border-2 ${i === img ? "border-brand" : "border-line"}`}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" className="h-16 w-14 bg-white object-contain" />
+            </button>
           ))}
         </div>
-      </div>
-      <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
-        {[0, 1, 2, 3].map((i) => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            key={i}
-            src={`/products/${p.id}.jpg`}
-            alt=""
-            className={`h-16 w-14 shrink-0 rounded-md border object-cover ${i === 0 ? "border-brand" : "border-line"}`}
-          />
-        ))}
-      </div>
+      )}
 
       {/* title + price */}
       <div className="px-4 pb-4">

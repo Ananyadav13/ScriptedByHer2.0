@@ -24,13 +24,25 @@ const NAV = [
 function Logo() {
   return (
     <Link href="/" className="flex items-center gap-2">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
-          <path d="M4 8h16l-1.2 11.2a1.5 1.5 0 0 1-1.5 1.3H6.7a1.5 1.5 0 0 1-1.5-1.3L4 8Z" fill="currentColor" />
-          <path d="M8.5 8a3.5 3.5 0 1 1 7 0" stroke="#fff" strokeWidth="1.6" fill="none" />
+      <span
+        className="grid h-9 w-9 place-items-center rounded-[11px] shadow-sm"
+        style={{ background: "linear-gradient(140deg, #5a0d4d 0%, #7a1160 100%)" }}
+        aria-hidden
+      >
+        {/* Meesho-style orange "m" */}
+        <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+          <path
+            d="M4 24V15c0-3.3 2.7-6 6-6 2 0 3.8 1 4.9 2.5A6 6 0 0 1 20 9c3.3 0 6 2.7 6 6v9"
+            stroke="#F57C1D"
+            strokeWidth="3.6"
+            strokeLinecap="round"
+            fill="none"
+          />
         </svg>
       </span>
-      <span className="text-2xl font-extrabold tracking-tight text-brand">meesho</span>
+      <span className="text-2xl font-extrabold tracking-tight" style={{ color: "#57123f" }}>
+        meesho
+      </span>
       <span className="hidden rounded-md bg-brand-wash px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-ink sm:inline">
         Build&nbsp;Trust
       </span>
