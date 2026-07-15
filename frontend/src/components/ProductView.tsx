@@ -10,7 +10,9 @@ import {
   highlights,
   payLater,
   ratingSummary,
+  ratingTone,
   reviewDisplay,
+  reviewPhotos,
   sellerInfo,
   sizeChart,
   sizeOptions,
@@ -124,7 +126,10 @@ export function ProductView({
           ₹{payLater(p.price)} with <span className="font-semibold text-brand-ink">Meesho Pay Later</span> ›
         </div>
         <div className="mt-2 inline-flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-0.5 rounded bg-green px-1.5 py-0.5 text-xs font-semibold text-white">
+          <span
+            className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+            style={{ background: ratingTone(Math.round(headlineRating)).badge }}
+          >
             {headlineRating.toFixed(1)} ★
           </span>
           <span className="text-xs text-ink-faint">({compact(rs.total || p.rating_count)})</span>
@@ -260,7 +265,10 @@ export function ProductView({
       {/* ratings & reviews */}
       <Section title="Customer Ratings & Reviews">
         <div className="flex gap-4">
-          <div className="grid h-20 w-20 shrink-0 place-content-center rounded-lg bg-green text-center text-white">
+          <div
+            className="grid h-20 w-20 shrink-0 place-content-center rounded-lg text-center text-white"
+            style={{ background: ratingTone(Math.round(headlineRating)).badge }}
+          >
             <div className="text-2xl font-bold leading-none">{headlineRating.toFixed(1)} ★</div>
             <div className="mt-1 text-[10px] opacity-90">{compact(rs.total)} ratings</div>
           </div>
@@ -269,7 +277,10 @@ export function ProductView({
               <div key={row.label} className="flex items-center gap-2 text-xs">
                 <span className="w-16 text-ink-soft">{row.label}</span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#eee]">
-                  <div className="h-full rounded-full bg-green" style={{ width: `${(row.count / maxBucket) * 100}%` }} />
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${(row.count / maxBucket) * 100}%`, background: row.color }}
+                  />
                 </div>
                 <span className="w-8 text-right text-ink-faint">{row.count}</span>
               </div>
@@ -281,9 +292,9 @@ export function ProductView({
           <div className="mt-4">
             <div className="mb-2 text-sm font-semibold text-ink">Real Photos ({photoReviews.length})</div>
             <div className="flex gap-2 overflow-x-auto">
-              {photoReviews.slice(0, 5).map((r, i) => (
+              {photoReviews.slice(0, 5).map((r) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={r.id} src={`/products/${p.id}.jpg`} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" />
+                <img key={r.id} src={reviewPhotos(r.id, 1)[0]} alt="" className="h-16 w-16 shrink-0 rounded-md object-cover" />
               ))}
               {photoReviews.length > 5 && (
                 <div className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-black/70 text-xs font-semibold text-white">
@@ -297,21 +308,27 @@ export function ProductView({
         <div className="mt-4 space-y-4">
           {p.reviews.slice(0, 6).map((r) => {
             const d = reviewDisplay(r, p.id);
+            const tone = ratingTone(r.rating);
             return (
               <div key={r.id} className="border-t border-line pt-3 first:border-t-0 first:pt-0">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-0.5 rounded bg-green px-1.5 py-0.5 text-xs font-semibold text-white">
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs font-semibold text-white"
+                    style={{ background: tone.badge }}
+                  >
                     {r.rating} ★
                   </span>
-                  <span className="text-sm font-medium text-ink">{d.verdictLabel}</span>
+                  <span className="text-sm font-medium" style={{ color: tone.badge }}>
+                    {d.verdictLabel}
+                  </span>
                   <span className="text-xs text-ink-faint">· {d.date}</span>
                 </div>
                 <p className="mt-1.5 text-sm text-ink-soft">{r.text}</p>
                 {d.photos > 0 && (
                   <div className="mt-2 flex gap-2">
-                    {Array.from({ length: d.photos }).map((_, i) => (
+                    {reviewPhotos(r.id, d.photos).map((src, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img key={i} src={`/products/${p.id}.jpg`} alt="" className="h-14 w-14 rounded-md object-cover" />
+                      <img key={i} src={src} alt="" className="h-14 w-14 rounded-md object-cover" />
                     ))}
                   </div>
                 )}

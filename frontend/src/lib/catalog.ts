@@ -113,6 +113,15 @@ export function reviewDisplay(r: Review, productId: string): ReviewDisplay {
   return { name, date: `${String(day).padStart(2, "0")} ${month}, ${year}`, helpful, verdictLabel, photos };
 }
 
+// star-rating -> tone (matches Meesho: green for good, amber mid, red for bad)
+export function ratingTone(rating: number): { bar: string; badge: string } {
+  if (rating >= 5) return { bar: "#16794c", badge: "#16794c" };
+  if (rating === 4) return { bar: "#4caf50", badge: "#4caf50" };
+  if (rating === 3) return { bar: "#f0ad4e", badge: "#e08a1e" };
+  if (rating === 2) return { bar: "#f0752b", badge: "#e0611a" };
+  return { bar: "#e53935", badge: "#d32f2f" };
+}
+
 export function ratingSummary(reviews: Review[]) {
   const buckets = [0, 0, 0, 0, 0]; // index0=1star ... index4=5star
   reviews.forEach((r) => {
@@ -127,13 +136,20 @@ export function ratingSummary(reviews: Review[]) {
     total,
     withPhotos,
     rows: [
-      { label: "Very Good", count: buckets[4] },
-      { label: "Good", count: buckets[3] },
-      { label: "Ok-Ok", count: buckets[2] },
-      { label: "Bad", count: buckets[1] },
-      { label: "Very Bad", count: buckets[0] },
+      { label: "Very Good", count: buckets[4], color: "#16794c" },
+      { label: "Good", count: buckets[3], color: "#4caf50" },
+      { label: "Ok-Ok", count: buckets[2], color: "#f0ad4e" },
+      { label: "Bad", count: buckets[1], color: "#f0752b" },
+      { label: "Very Bad", count: buckets[0], color: "#e53935" },
     ],
   };
+}
+
+// deterministic buyer-photo picks from /public/reviews/r{1..5}.jpg
+const REVIEW_PHOTO_POOL = 5;
+export function reviewPhotos(reviewId: string, count: number): string[] {
+  const h = hash(reviewId);
+  return Array.from({ length: count }, (_, i) => `/reviews/r${((h + i) % REVIEW_PHOTO_POOL) + 1}.jpg`);
 }
 
 export function payLater(price: number): number {

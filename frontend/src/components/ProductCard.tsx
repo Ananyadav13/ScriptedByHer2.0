@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { Product } from "@/lib/api";
-import { payLater } from "@/lib/catalog";
+import { payLater, ratingTone } from "@/lib/catalog";
 
 function money(n: number) {
   return "₹" + Math.round(n).toLocaleString("en-IN");
@@ -57,7 +57,10 @@ export function ProductCard({ p, sponsored }: { p: Product; sponsored?: boolean 
             ₹{payLater(p.price)} with Pay Later
           </div>
           <div className="mt-1.5 flex items-center gap-1.5">
-            <span className="inline-flex items-center gap-0.5 rounded bg-green px-1.5 py-0.5 text-[11px] font-semibold text-white">
+            <span
+              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-semibold text-white"
+              style={{ background: ratingTone(Math.round(rating)).badge }}
+            >
               {rating.toFixed(1)} ★
             </span>
             {p.rating_count > 0 && (
