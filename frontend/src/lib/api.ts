@@ -86,6 +86,12 @@ export const api = {
     }).then(j<{ investigation_id: string; status: string; order_id: string }>),
   investigation: (id: string) =>
     fetch(`${API}/investigations/${id}`, { cache: "no-store" }).then(j<Investigation>),
+  investigations: (limit = 25) =>
+    fetch(`${API}/investigations?limit=${limit}`, { cache: "no-store" }).then(j<InvestigationList>),
+  agent1Evidence: (opts: { product_id?: string; order_id?: string }) => {
+    const q = opts.product_id ? `product_id=${opts.product_id}` : `order_id=${opts.order_id}`;
+    return fetch(`${API}/agent1/evidence?${q}`, { cache: "no-store" }).then(j<Agent1Evidence>);
+  },
   fit: (buyer_id: string, product_id: string) =>
     fetch(`${API}/fit?buyer_id=${buyer_id}&product_id=${product_id}`, { cache: "no-store" }).then(
       j<FitResult>,
@@ -229,3 +235,25 @@ export type Agent2Findings = {
   count: number;
   products: Agent2Product[];
 };
+
+export type EvidenceSignal = { label: string; flag: boolean; detail: string };
+export type Agent1Evidence = {
+  product_id: string;
+  order_id: string | null;
+  risk_flags: number;
+  tools: { tool: string; signals: EvidenceSignal[] }[];
+};
+export type InvestigationSummary = {
+  id: string;
+  product_id: string | null;
+  product_title: string | null;
+  order_id: string | null;
+  trigger: string;
+  status: string;
+  tool_count: number;
+  decision: string | null;
+  action: string | null;
+  confidence: number | null;
+  created_at: string;
+};
+export type InvestigationList = { count: number; investigations: InvestigationSummary[] };
