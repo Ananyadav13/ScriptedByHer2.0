@@ -18,6 +18,7 @@ import {
 } from "@/lib/catalog";
 import { VerifyPanel } from "@/components/VerifyPanel";
 import { DisputeCard } from "@/components/DisputeCard";
+import { BuyFlowModal } from "@/components/BuyFlowModal";
 import { PRODUCT_IMAGES } from "@/lib/productImages";
 
 const money = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
@@ -69,6 +70,7 @@ export function ProductView({
 
   const imgs = PRODUCT_IMAGES[p.id] ?? [`/products/${p.id}.jpg`];
   const [img, setImg] = useState(0);
+  const [buyMode, setBuyMode] = useState<"cart" | "buy" | null>(null);
 
   return (
     <div className="mx-auto max-w-2xl bg-surface pb-24">
@@ -369,13 +371,25 @@ export function ProductView({
         </Section>
       )}
 
-      {/* sticky buy bar */}
+      {/* sticky buy bar — each action runs Agent 1 first (verify before you buy) */}
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-2xl gap-3 border-t border-line bg-surface px-4 py-2.5">
-        <button className="flex-1 rounded-lg border border-brand py-3 text-sm font-bold text-brand-ink">
+        <button
+          onClick={() => setBuyMode("cart")}
+          className="flex-1 rounded-lg border border-brand py-3 text-sm font-bold text-brand-ink transition hover:bg-brand-wash"
+        >
           🛒 Add to Cart
         </button>
-        <button className="flex-1 rounded-lg bg-brand py-3 text-sm font-bold text-white">▶▶ Buy Now</button>
+        <button
+          onClick={() => setBuyMode("buy")}
+          className="flex-1 rounded-lg bg-brand py-3 text-sm font-bold text-white transition hover:bg-brand-ink"
+        >
+          ▶▶ Buy Now
+        </button>
       </div>
+
+      {buyMode && (
+        <BuyFlowModal productId={p.id} title={p.title} mode={buyMode} onClose={() => setBuyMode(null)} />
+      )}
     </div>
   );
 }

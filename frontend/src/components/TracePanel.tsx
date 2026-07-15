@@ -38,11 +38,13 @@ export function TracePanel({
   sublabel,
   start,
   autoStart = false,
+  onResolve,
 }: {
   label?: string;
   sublabel?: string;
   start: () => Promise<string>;
   autoStart?: boolean;
+  onResolve?: (verdict: Verdict | null) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [steps, setSteps] = useState<Step[]>([]);
@@ -52,6 +54,21 @@ export function TracePanel({
   const esRef = useRef<EventSource | null>(null);
   const startedRef = useRef(false);
   const verdictRef = useRef<Verdict | null>(null);
+  const resolvedRef = useRef(false);
+  const onResolveRef = useRef(onResolve);
+  onResolveRef.current = onResolve;
+
+  // fire onResolve exactly once when the investigation settles
+  useEffect(() => {
+    if (resolvedRef.current) return;
+    if (verdict) {
+      resolvedRef.current = true;
+      onResolveRef.current?.(verdict);
+    } else if (phase === "error" || phase === "done") {
+      resolvedRef.current = true;
+      onResolveRef.current?.(null);
+    }
+  }, [verdict, phase]);
 
   const applyEvent = useCallback((ev: TraceEvent) => {
     switch (ev.type) {

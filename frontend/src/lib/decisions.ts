@@ -48,6 +48,16 @@ export const ACTION_META: Record<string, Meta> = {
   manager_delete: { label: "Manager: deleted", tone: "rose" },
 };
 
+// decisions that must BLOCK a purchase (the listing is unsafe to buy right now)
+const BLOCKING = new Set([
+  "counterfeit_lock",
+  "ban",
+  "hold_pending_fix",
+  "request_qc_video",
+  "manual_review",
+]);
+export const isBlocking = (d?: string | null): boolean => !!d && BLOCKING.has(d);
+
 export const decisionMeta = (d?: string | null): Meta =>
   (d && DECISION_META[d]) || { label: d ?? "—", tone: "neutral" };
 export const statusMeta = (s?: string | null): Meta =>

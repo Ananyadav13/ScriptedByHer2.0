@@ -139,15 +139,31 @@ def _seed(db):
 
     # ---------- REVIEWS ----------
     reviews = []
-    # counterfeit: burst of 5-star from very new accounts
+    # counterfeit: burst of 5-star from very new accounts (varied generic praise —
+    # the giveaway is that EVERY reviewer is a 2-day-old account, not the wording).
+    cf_txt = [
+        "Amazing genuine watch, looks so premium!",
+        "Original piece, worth every rupee 😍",
+        "100% authentic, exactly like the showroom",
+        "Best watch I've bought online, superb quality",
+        "Loved it, feels so premium and real",
+        "Genuine product and super fast delivery",
+    ]
     for i in range(12):
         reviews.append(Review(id=f"rev_cf_{i}", product_id="prod_counterfeit_rolex",
-                              rating=5, text="Amazing genuine watch!!", created_at=_dt(2),
+                              rating=5, text=cf_txt[i % len(cf_txt)], created_at=_dt(2),
                               reviewer_account_age_days=2))
     # viral honest: burst of reviews but from OLD accounts (not flagged)
+    vi_txt = [
+        "Great fit, soft cotton, went viral on reels!",
+        "So comfy, perfect for summer 👌",
+        "Love the oversized fit, true to size",
+        "Fabric is really soft, totally worth it",
+        "Trendy and comfortable, highly recommend",
+    ]
     for i in range(15):
         reviews.append(Review(id=f"rev_vi_{i}", product_id="prod_viral_honest",
-                              rating=5, text="Great fit, soft cotton, went viral on reels",
+                              rating=5, text=vi_txt[i % len(vi_txt)],
                               created_at=_dt(3), reviewer_account_age_days=400 + i * 20))
     # fabric kurti: negative cluster; two reviews carry videos (Phase 3 vision).
     # video_path points at a REAL review-video asset dropped into media/videos/
