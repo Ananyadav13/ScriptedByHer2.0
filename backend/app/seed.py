@@ -116,6 +116,11 @@ def _seed(db):
                 price=549, mrp=1299, images=["bedsheet.jpg"],
                 fabric_claim="cotton", status="active",
                 size_chart_json=None),
+        # 6b. Delivery-fault: a GOOD seller's product ruined by a bad courier -> Agent-2
+        #     audit routes to logistics referral, NO seller-rating penalty (fairness rule).
+        Product(id="prod_damaged_courier", seller_id="seller_shoes",
+                title="Glass Water Bottle 1L", brand="StepUp", category="home",
+                price=299, mrp=699, images=["bottle.jpg"], fabric_claim=None, status="active"),
         # 7. Loved knockoff: branded-style, far below MRP (counterfeit signal) BUT
         #    genuinely high trustworthy rating -> relabel_required, NOT a ban.
         Product(id="prod_knockoff_loved", seller_id="seller_knockoff",
@@ -179,13 +184,24 @@ def _seed(db):
         reviews.append(Review(id=f"rev_kn_{i}", product_id="prod_knockoff_loved",
                               rating=5 if i % 5 else 4, text=knock_txt[i % 5],
                               created_at=_dt(i * 3), reviewer_account_age_days=200 + i * 15))
-    # fixable: many mid reviews about fixable gaps (missing size info / thin)
-    fix_txt = ["Thinner than expected", "No size chart, guessed wrong",
-               "Decent but description lacks detail", "Okay quality, poor listing info"]
-    for i in range(800):
+    # fixable: many mid reviews dominated by a SIZE complaint (missing size chart) ->
+    # Agent-2 audit trips a delist tier and routes to correction_window + a fix draft.
+    # 1000 recent established-account reviews at 2★ -> trustworthy ~2.0, trips <3.0/1000+.
+    fix_txt = ["No size chart, ordered the wrong size", "Size unclear, too small for my bed",
+               "Size chart missing, had to guess the measurement", "Runs small, size details lacking"]
+    for i in range(1000):
         reviews.append(Review(id=f"rev_fx_{i}", product_id="prod_fixable_bedsheet",
-                              rating=2, text=fix_txt[i % 4], created_at=_dt(30 + i % 60),
+                              rating=2, text=fix_txt[i % 4], created_at=_dt(20 + i % 60),
                               reviewer_account_age_days=350))
+    # delivery-fault: a well-rated SELLER's product wrecked by a bad courier -> the audit
+    # trips a tier but the dominant complaint is damaged_delivery -> logistics referral,
+    # NO seller-rating penalty (the fairness rule: faults are the hub's, not the seller's).
+    dmg_txt = ["Arrived broken, packaging crushed", "Damaged in transit, box destroyed",
+               "Item shattered on delivery", "Received cracked, courier mishandled it"]
+    for i in range(800):
+        reviews.append(Review(id=f"rev_dmg_{i}", product_id="prod_damaged_courier",
+                              rating=1, text=dmg_txt[i % 4], created_at=_dt(20 + i % 60),
+                              reviewer_account_age_days=300))
     db.add_all(reviews)
 
     # ---------- BUYERS ----------

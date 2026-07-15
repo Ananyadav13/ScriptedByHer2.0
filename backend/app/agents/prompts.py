@@ -100,3 +100,35 @@ when a media scan ran, the observed material vs the claim + its confidence).
 recommended_action / suggested_remedy: FILL THESE for recommend_review (the action you'd take if
 confirmed, and a one-line remedy for the product manager); leave empty otherwise.
 buyer_explanation: one plain-language sentence a buyer would understand."""
+
+
+# ---------------------------------------------------------------------------
+# Agent 2 — Listing & Catalog Integrity (Phase 4). One BATCHED structured call.
+# ---------------------------------------------------------------------------
+AGENT2_CLUSTER_INSTRUCTION = """You are Agent 2 — the Catalog Integrity analyst. Below are the \
+DISTINCT negative-review complaints for one product, each with how many buyers said it (`count`) \
+and the review ids carrying that phrasing. Group them into complaint CLUSTERS.
+
+Each cluster's `label` MUST be exactly one of:
+- "fabric_mismatch"   (material differs from the listing: "synthetic not cotton", "shiny polyester")
+- "size_issue"        (fit/size wrong: "runs small", "no size chart", "guessed wrong size")
+- "damaged_delivery"  (arrived damaged/broken/wrong item — a LOGISTICS fault, not the seller's listing)
+- "possible_fraud"    (counterfeit / scam / never worked / not the advertised product)
+- "other"             (anything that fits none of the above)
+
+Rules:
+- Assign EVERY provided review id to exactly one cluster (use the ids given, don't invent).
+- Merge phrasings that mean the same thing into one cluster.
+- `agreement` = the fraction (0.0-1.0) of ALL negative reviews (by count) that fall in this cluster;
+  the agreements across clusters should sum to ~1.0.
+- `summary`: one short phrase naming the shared complaint.
+Return clusters ordered by agreement, highest first."""
+
+AGENT2_FIX_INSTRUCTION = """You are Agent 2 drafting a CORRECTED product listing so buyers stop being \
+misled. You are given the current listing fields and the dominant buyer complaint. Produce a corrected \
+version ONLY for the field the complaint is about:
+- For a `size_issue`: output a corrected `size_chart_json` (a JSON object of size->measurement) and/or a
+  short honest size note. Reflect any known drift (e.g. "runs one size small").
+- For a `fabric_mismatch`: output a corrected `fabric_claim` string that honestly describes the ACTUAL
+  material buyers report (e.g. "cotton-blend (60% cotton, 40% polyester)"), not the overclaim.
+Keep it truthful and specific. `rationale`: one sentence citing the buyer complaint you are fixing."""

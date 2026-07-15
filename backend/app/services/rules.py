@@ -91,3 +91,21 @@ DISPUTE_RATE_ALERT = 0.10           # > 10% of recent orders disputed => investi
 PHOTO_MISMATCH_SHARE = 0.40         # > 40% of review photos contradict the listing (vision, Phase 3)
 SELLER_QC_SLA_DAYS = 7              # seller quality-check response deadline before we act
 MIN_ORDERS_FOR_ACTION = 20          # confidence floor: need >= this many orders before a hard lock/ban
+
+# ---------------------------------------------------------------------------
+# 10. Agent 2 — review clustering + catalog integrity (Phase 4).
+#     We act on AGREEMENT (how consistently buyers report the same problem), not
+#     raw complaint count — one loud review is noise; a shared complaint is signal.
+# ---------------------------------------------------------------------------
+CLUSTER_MIN_AGREEMENT = 0.30       # a cluster is "actionable" when >= this share of negative reviews agree
+NEGATIVE_REVIEW_MAX_RATING = 2     # reviews rated <= this are "negative" (the clustering input)
+MAX_CLUSTER_TEXTS = 60             # cap distinct complaint phrasings sent to the LLM (cost control)
+# clusters that a seller can FIX with a corrected listing (vs. suspend / logistics-refer)
+FIXABLE_CLUSTERS = ("fabric_mismatch", "size_issue")
+
+# ---------------------------------------------------------------------------
+# 11. Mandatory listing fields (Phase 4 gate + Phase 5 new-listing flow).
+#     A listing (or a new one) is blocked/held until these are present. The
+#     listing VIDEO is mandatory too (it is the canonical media reference — §8).
+# ---------------------------------------------------------------------------
+MANDATORY_FIELDS = ("size_chart_json", "fabric_claim", "listing_video_path")

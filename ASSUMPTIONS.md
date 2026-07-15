@@ -8,7 +8,7 @@ Guiding principle: *authenticity matters, but **not** at the cost of the buyer o
 community.* A cheap knockoff people knowingly love ≠ a counterfeit people regret; a seller
 with 50 good products and one dud is not a scammer.
 
-> Legend: ✅ built & verified (Phase 2) · 🎥 needs vision (Phase 3) · 🧹 Agent-2 engine (Phase 4)
+> Legend: ✅ built & verified (Phase 2) · 🎥 needs vision (Phase 3) · 🧹 Agent-2 engine (Phase 4, built & pytest-verified)
 
 ---
 
@@ -43,7 +43,12 @@ with 50 good products and one dud is not a scammer.
 | | `SELLER_QC_SLA_DAYS` | `7` | seller quality-check deadline before we act |
 | | `MIN_ORDERS_FOR_ACTION` | `20` | confidence floor before a hard lock/ban |
 | **Fair seller rating** | `SELLER_PENALTY_MAX` | `0.5` | max hit, only for an all-fraud seller |
-| **Agent-2 delist** | `DELIST_TIERS` | `(3.0,1000)·(2.0,700)·(1.0,500)` | recent avg < R over ≥ N ⇒ delist 🧹 |
+| **Agent-2 delist** | `DELIST_TIERS` | `(3.0,1000)·(2.0,700)·(1.0,500)` | recent trustworthy < R over ≥ N ⇒ delist 🧹 |
+| **Agent-2 cluster** | `CLUSTER_MIN_AGREEMENT` | `0.30` | a complaint cluster is "actionable" at ≥ 30% agreement (not raw count) 🧹 |
+| | `NEGATIVE_REVIEW_MAX_RATING` | `2` | reviews ≤ 2★ are the clustering input 🧹 |
+| | `MAX_CLUSTER_TEXTS` | `60` | cap distinct phrasings sent to the LLM (cost) 🧹 |
+| | `FIXABLE_CLUSTERS` | `fabric_mismatch, size_issue` | clusters a corrected listing can fix (vs suspend/logistics) 🧹 |
+| **Mandatory fields** | `MANDATORY_FIELDS` | `size_chart_json, fabric_claim, listing_video_path` | gate: video always; size chart for apparel/footwear; fabric for apparel/home 🧹 |
 
 ---
 
@@ -96,6 +101,24 @@ with 50 good products and one dud is not a scammer.
 
 ### Agent-1 decision (LLM + `_execute_action`) ✅
 - The ladder thresholds `BAN_RATING`, `PRODUCT_HOLD_RATING`, `INCONSISTENCY_EXEMPT_RATING`, `SELLER_CONCERN_RATING` are enforced by the system prompt, which **mirrors these constants** (see `prompts.py`). *Keep the prompt numbers in sync with `rules.py`.*
+
+### `predict_size(buyer_id, product_id)` 🧹 (Phase 4) — PURE, no LLM
+- **Reads:** nothing from `rules.py`; joins the buyer's `kept_size_history_json` × the `size_drift` row (brand+category). `delta < 0` = runs small → size **up**; `delta > 0` = runs large → size **down**. Numeric and S/M/L ladders, clamped at ends. No history + no drift → `no_history` fallback (adjust nothing). *E.g. buyer_normal × StepUp footwear: 8 → 9 (214 returns).*
+
+### `delist_tier(rating, count)` + `evaluate_delisting(product, dominant_label?)` 🧹 (Phase 4) — PURE
+- **Reads:** `DELIST_TIERS`, `REPEAT_CASE_COUNT`, `BAN_RATING`, `SELLER_PENALTY_MAX` (via `seller_rating_impact`). Tier = most-severe `(rating_below, min_count)` tripped on the **trustworthy rating** + genuine-review count; the `≤1.0` tier is inclusive. **Routing:** `possible_fraud` / repeat-offender → **suspend** (+ proportional penalty); `damaged_delivery` → **logistics_referral** (NO penalty); fixable/other → **correction_window** (+ fix draft for fixable). Never delists on insufficient (thin) genuine reviews.
+
+### `classify_complaints(product)` 🧹 (Phase 4) — PURE, deterministic keyword classifier
+- Buckets negative reviews (≤ `NEGATIVE_REVIEW_MAX_RATING`) into the 5 cluster labels (fraud-first, then damage, material, size). Lets the **whole audit route with zero model calls**; the LLM `cluster_reviews` is the richer layer used only where a tier trips.
+
+### `cluster_reviews(product_id)` / `draft_fix(product, cluster)` 🧹 (Phase 4, LLM — graceful)
+- **Reads:** `CLUSTER_MIN_AGREEMENT` (0.30), `MAX_CLUSTER_TEXTS` (60), `NEGATIVE_REVIEW_MAX_RATING`, `FIXABLE_CLUSTERS`. One batched `response_schema` call each. Agreement is **recomputed deterministically** from real counts. `draft_fix` writes a `fix_draft` CatalogAction (before/after); on any model error both **degrade gracefully** (empty clusters / deterministic fallback draft) so `/audit` always completes. *Schema note: no open `dict` in a `response_schema` — the corrected size chart is a `list[SizeRow]`.*
+
+### Tripwires `rating_drop` / `return_rate` / `dispute_rate` 🧹 (Phase 4) — PURE
+- **Reads:** `RATING_DROP_ALERT` (0.5) over `RATING_TREND_WINDOW_DAYS` (30), `RETURN_RATE_ALERT` (0.30), `DISPUTE_RATE_ALERT` (0.10). A trip FIRES an Agent-1 `run_investigation` (trigger `tripwire`) — event-driven, not polling.
+
+### Mandatory-fields gate `check_product` / `check_new_listing` 🧹 (Phase 4) — PURE
+- **Reads:** `MANDATORY_FIELDS`. Category-aware: `listing_video_path` always; `size_chart_json` for apparel/footwear; `fabric_claim` for apparel/home. Missing on a live listing → hold; missing on a new listing → block (Phase 5 flow).
 
 ---
 

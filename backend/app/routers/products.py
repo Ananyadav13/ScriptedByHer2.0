@@ -16,7 +16,9 @@ router = APIRouter(prefix="/products", tags=["products"])
 # statuses where a buyer/seller should see WHY the listing is restricted.
 # NOTE: `flagged` is deliberately NOT here — it's an advisory manager recommendation,
 # the sale continues with no buyer-facing restriction (PLAN.md §5B).
-_RESTRICTED = {"locked", "on_hold", "needs_info", "suspended"}
+# `correction_window` (Phase 4 audit) IS shown: the buyer sees the listing is being
+# corrected (a heads-up), and the reason carries the dominant complaint.
+_RESTRICTED = {"locked", "on_hold", "needs_info", "suspended", "correction_window"}
 
 
 def _latest_action(db: Session, product_id: str) -> CatalogAction | None:
@@ -26,6 +28,22 @@ def _latest_action(db: Session, product_id: str) -> CatalogAction | None:
         .order_by(CatalogAction.created_at.desc())
         .first()
     )
+
+
+def _latest_decision_action(db: Session, product_id: str) -> CatalogAction | None:
+    """The most recent action that carries a status DECISION (skips bookkeeping rows like
+    `fix_draft`/`reverify`/`manager_*` that can be newer but hold no lock reason)."""
+    rows = (
+        db.query(CatalogAction)
+        .filter(CatalogAction.product_id == product_id)
+        .order_by(CatalogAction.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    for a in rows:
+        if (a.evidence_json or {}).get("decision"):
+            return a
+    return rows[0] if rows else None
 
 
 @router.get("", response_model=list[ProductOut])
@@ -42,7 +60,7 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
     detail = ProductDetail.model_validate(p)
     detail.qc_requested = p.qc_requested_at is not None and not p.qc_responded
     if p.status in _RESTRICTED:
-        last = _latest_action(db, product_id)
+        last = _latest_decision_action(db, product_id)
         if last is not None:
             detail.latest_action = last.action
             ev = last.evidence_json or {}
