@@ -1,0 +1,264 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { API, api, type TraceEvent, type Verdict } from "@/lib/api";
+import { decisionMeta, toolMeta } from "@/lib/decisions";
+import { Badge, Button, Card, Spinner } from "@/components/ui";
+
+type Step = {
+  name: string;
+  args: Record<string, unknown>;
+  result?: Record<string, unknown> | null;
+  done: boolean;
+};
+
+type Phase = "idle" | "running" | "done" | "error";
+
+// summarise a deterministic tool result dict into one human line.
+function resultLine(r: unknown): { text: string; flag?: boolean } {
+  if (r == null || typeof r !== "object") return { text: String(r ?? "") };
+  const o = r as Record<string, unknown>;
+  const flag = typeof o.flag === "boolean" ? o.flag : undefined;
+  const reason =
+    (o.reason as string) ||
+    (o.classification as string) ||
+    (o.summary as string) ||
+    (o.note as string);
+  if (reason) return { text: reason, flag };
+  const keys = Object.entries(o)
+    .filter(([, v]) => typeof v !== "object")
+    .slice(0, 4)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(" · ");
+  return { text: keys || "checked", flag };
+}
+
+export function TracePanel({
+  label = "Verify before you buy",
+  sublabel,
+  start,
+  autoStart = false,
+}: {
+  label?: string;
+  sublabel?: string;
+  start: () => Promise<string>;
+  autoStart?: boolean;
+}) {
+  const [phase, setPhase] = useState<Phase>("idle");
+  const [steps, setSteps] = useState<Step[]>([]);
+  const [statusMsg, setStatusMsg] = useState<string>("");
+  const [verdict, setVerdict] = useState<Verdict | null>(null);
+  const [error, setError] = useState<string>("");
+  const esRef = useRef<EventSource | null>(null);
+  const startedRef = useRef(false);
+  const verdictRef = useRef<Verdict | null>(null);
+
+  const applyEvent = useCallback((ev: TraceEvent) => {
+    switch (ev.type) {
+      case "status":
+        setStatusMsg(ev.status);
+        break;
+      case "tool_call":
+        setSteps((s) => [...s, { name: ev.name, args: ev.args, done: false }]);
+        break;
+      case "tool_result":
+        setSteps((s) => {
+          const copy = [...s];
+          for (let i = copy.length - 1; i >= 0; i--) {
+            if (copy[i].name === ev.name && !copy[i].done) {
+              copy[i] = {
+                ...copy[i],
+                result: ev.result as Record<string, unknown>,
+                done: true,
+              };
+              break;
+            }
+          }
+          return copy;
+        });
+        break;
+      case "verdict":
+        verdictRef.current = ev;
+        setVerdict(ev);
+        break;
+      case "error":
+        setError(ev.error);
+        setPhase("error");
+        break;
+    }
+  }, []);
+
+  // Fallback: SSE dropped or the investigation finished before we subscribed.
+  const pollOnce = useCallback(async (id: string) => {
+    try {
+      const inv = await api.investigation(id);
+      if (inv.verdict) {
+        verdictRef.current = inv.verdict;
+        setVerdict(inv.verdict);
+      }
+      if (inv.status === "done" || inv.verdict) setPhase("done");
+      else if (inv.status === "error") {
+        setError("Investigation failed.");
+        setPhase("error");
+      } else setTimeout(() => pollOnce(id), 1200);
+    } catch {
+      setError("Could not reach the backend.");
+      setPhase("error");
+    }
+  }, []);
+
+  const run = useCallback(async () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    setPhase("running");
+    setSteps([]);
+    setVerdict(null);
+    setError("");
+    setStatusMsg("starting…");
+    let id: string;
+    try {
+      id = await start();
+    } catch {
+      setError("Could not start the investigation — is the backend running?");
+      setPhase("error");
+      return;
+    }
+    const es = new EventSource(`${API}/events/${id}`);
+    esRef.current = es;
+    es.onmessage = (m) => {
+      let ev: TraceEvent;
+      try {
+        ev = JSON.parse(m.data);
+      } catch {
+        return;
+      }
+      if (ev.type === "done") {
+        es.close();
+        setPhase((p) => (p === "error" ? p : "done"));
+        return;
+      }
+      if (ev.type === "closed") {
+        es.close();
+        pollOnce(id); // already finished — read the final verdict
+        return;
+      }
+      applyEvent(ev);
+    };
+    es.onerror = () => {
+      es.close();
+      // SSE dropped mid-flight → poll for the final state
+      if (!verdictRef.current) pollOnce(id);
+    };
+  }, [start, applyEvent, pollOnce]);
+
+  // auto-start on mount (used by the dispute flow after claim selection)
+  useEffect(() => {
+    if (autoStart) void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dm = verdict ? decisionMeta(verdict.decision) : null;
+
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
+        <div>
+          <div className="text-sm font-semibold text-ink">Live agent trace</div>
+          {sublabel && <div className="text-xs text-ink-faint">{sublabel}</div>}
+        </div>
+        {phase === "idle" && (
+          <Button onClick={run}>
+            <span>🛡️</span>
+            {label}
+          </Button>
+        )}
+        {phase === "running" && (
+          <span className="flex items-center gap-2 text-sm text-ink-soft">
+            <Spinner /> investigating…
+          </span>
+        )}
+        {phase === "done" && <Badge tone="green">complete</Badge>}
+        {phase === "error" && <Badge tone="rose">error</Badge>}
+      </div>
+
+      <div className="px-5 py-4">
+        {phase === "idle" && (
+          <p className="text-sm text-ink-soft">
+            An autonomous agent gathers deterministic evidence, reasons over it, and takes an
+            action. You&apos;ll watch every step stream in live.
+          </p>
+        )}
+
+        {phase === "error" && (
+          <div className="rounded-xl bg-rose-wash px-4 py-3 text-sm text-rose">{error}</div>
+        )}
+
+        {(steps.length > 0 || phase === "running") && (
+          <ol className="space-y-2.5">
+            {steps.map((s, i) => {
+              const tm = toolMeta(s.name);
+              const rl = s.result ? resultLine(s.result) : null;
+              return (
+                <li key={i} className="bt-rise flex gap-3">
+                  <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-wash text-base">
+                    {tm.icon}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-ink">{tm.label}</span>
+                      {!s.done ? (
+                        <Spinner className="text-brand" />
+                      ) : rl?.flag === true ? (
+                        <Badge tone="rose">signal</Badge>
+                      ) : rl?.flag === false ? (
+                        <Badge tone="green">clear</Badge>
+                      ) : null}
+                    </div>
+                    {rl && <p className="mt-0.5 text-sm text-ink-soft">{rl.text}</p>}
+                  </div>
+                </li>
+              );
+            })}
+            {phase === "running" && !verdict && (
+              <li className="flex gap-3">
+                <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[#eef0f4]">
+                  <span className="bt-pulse text-base">🧠</span>
+                </div>
+                <div className="flex items-center text-sm text-ink-faint">
+                  {statusMsg === "running" || !statusMsg ? "reasoning over evidence…" : statusMsg}
+                </div>
+              </li>
+            )}
+          </ol>
+        )}
+
+        {verdict && dm && (
+          <div className="mt-4 rounded-xl border border-line bg-[#fbfbfe] p-4 bt-rise">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Badge tone={dm.tone}>{dm.label}</Badge>
+              <span className="text-xs text-ink-faint">
+                confidence {Math.round((verdict.confidence ?? 0) * 100)}%
+              </span>
+            </div>
+            <p className="mt-3 text-sm text-ink">{verdict.buyer_explanation}</p>
+            {verdict.evidence?.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {verdict.evidence.map((e, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-ink-soft">
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand" />
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {verdict.suggested_remedy ? (
+              <div className="mt-3 rounded-lg bg-teal-wash px-3 py-2 text-sm text-teal">
+                Recommended to a human manager: {verdict.suggested_remedy}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
