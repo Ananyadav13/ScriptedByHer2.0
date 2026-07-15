@@ -26,16 +26,17 @@ function Logo() {
     <Link href="/" className="flex items-center gap-2">
       <span
         className="grid h-9 w-9 place-items-center rounded-[11px] shadow-sm"
-        style={{ background: "linear-gradient(140deg, #5a0d4d 0%, #7a1160 100%)" }}
+        style={{ background: "#55103f" }}
         aria-hidden
       >
-        {/* Meesho-style orange "m" */}
-        <svg width="22" height="22" viewBox="0 0 32 32" fill="none">
+        {/* Meesho orange "m" — thick, rounded double hump */}
+        <svg width="26" height="26" viewBox="0 0 40 40" fill="none">
           <path
-            d="M4 24V15c0-3.3 2.7-6 6-6 2 0 3.8 1 4.9 2.5A6 6 0 0 1 20 9c3.3 0 6 2.7 6 6v9"
-            stroke="#F57C1D"
-            strokeWidth="3.6"
+            d="M9 29 V19 Q9 13 14.5 13 Q20 13 20 19 V29 M20 19 Q20 13 25.5 13 Q31 13 31 19 V29"
+            stroke="#F7941D"
+            strokeWidth="5.5"
             strokeLinecap="round"
+            strokeLinejoin="round"
             fill="none"
           />
         </svg>
