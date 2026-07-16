@@ -150,7 +150,8 @@ class Notification(Base):
     ladder's 'notify' and 'immediate hub escalation' actions become real."""
     __tablename__ = "notifications"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    audience: Mapped[str] = mapped_column(String)   # seller | support | ops
+    audience: Mapped[str] = mapped_column(String)   # seller | manager | ops | buyer
+    recipient_id: Mapped[str | None] = mapped_column(String, nullable=True)  # seller/manager/buyer id
     subject: Mapped[str] = mapped_column(String)
     body: Mapped[str] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(String, default="normal")  # normal | high | immediate

@@ -15,8 +15,11 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import CatalogAction, Manager, Product, Seller
+from ..services import delisting
 
 router = APIRouter(tags=["manager"])
+
+_ISSUE_STATUSES = {"locked", "on_hold", "suspended", "needs_info", "flagged", "correction_window", "delisted"}
 
 # statuses that represent an agent action awaiting managerial review.
 # `flagged`/`needs_info` are ADVISORY (sale continues); locked/on_hold/suspended are protective.
@@ -60,6 +63,50 @@ def manager_queue(manager_id: str, db: Session = Depends(get_db)):
             "acted_at": last.created_at.isoformat() if last else None,
         })
     return {"manager_id": manager_id, "queue_size": len(out), "items": out}
+
+
+@router.get("/manager/{manager_id}/sellers")
+def manager_sellers(manager_id: str, db: Session = Depends(get_db)):
+    """The book of sellers this manager owns, each with their products + the dominant
+    complaint + current status — so a manager sees WHO they manage and WHAT's wrong."""
+    manager = db.get(Manager, manager_id)
+    if not manager:
+        raise HTTPException(404, "manager not found")
+    from datetime import datetime
+
+    _CLABEL = {"size_issue": "Size / fit", "fabric_mismatch": "Fabric mismatch",
+               "damaged_delivery": "Delivery damage", "possible_fraud": "Fraud / quality",
+               "other": "Assorted"}
+    out = []
+    for s in sorted(manager.sellers, key=lambda x: (x.rating or 0)):
+        prods = db.query(Product).filter(Product.seller_id == s.id).all()
+        pitems = []
+        for p in prods:
+            revs = p.reviews or []
+            avg = round(sum(r.rating for r in revs) / len(revs), 1) if revs else None
+            cl = delisting.classify_complaints(p)
+            complaint = None
+            if cl["dominant"] and cl["negative_count"] > 0:
+                complaint = {"label": _CLABEL.get(cl["dominant"], cl["dominant"]),
+                             "agreement": cl["agreement"], "count": cl["negative_count"]}
+            pitems.append({
+                "product_id": p.id, "title": p.title, "status": p.status,
+                "rating": avg, "review_count": len(revs), "complaint": complaint,
+                "needs_action": p.status in _ISSUE_STATUSES,
+            })
+        pitems.sort(key=lambda x: (0 if x["needs_action"] else 1))
+        age = (datetime.utcnow() - s.account_created_at).days if s.account_created_at else None
+        out.append({
+            "seller_id": s.id, "name": s.name, "rating": s.rating,
+            "trust_flags": s.trust_flags or [], "case_count": s.case_count or 0,
+            "account_age_days": age, "banned": bool(getattr(s, "banned", False)),
+            "product_count": len(prods),
+            "flagged_count": sum(1 for x in pitems if x["needs_action"]),
+            "products": pitems,
+        })
+    # riskiest sellers first (low rating / more flags)
+    out.sort(key=lambda x: (-x["flagged_count"], x["rating"] or 0))
+    return {"manager_id": manager_id, "name": manager.name, "seller_count": len(out), "sellers": out}
 
 
 class ManagerDecision(BaseModel):

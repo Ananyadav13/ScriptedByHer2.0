@@ -7,6 +7,7 @@ export type Review = {
   text: string;
   reviewer_account_age_days: number;
   has_video: boolean;
+  created_at: string | null;
 };
 
 export type Product = {
@@ -126,6 +127,12 @@ export const api = {
   managers: () => fetch(`${API}/managers`, { cache: "no-store" }).then(j<ManagerInfo[]>),
   managerQueue: (id: string) =>
     fetch(`${API}/manager/${id}/queue`, { cache: "no-store" }).then(j<ManagerQueue>),
+  managerSellers: (id: string) =>
+    fetch(`${API}/manager/${id}/sellers`, { cache: "no-store" }).then(j<ManagerSellers>),
+  notificationsFor: (audience: string, recipient_id: string) =>
+    fetch(`${API}/notifications?audience=${audience}&recipient_id=${recipient_id}`, {
+      cache: "no-store",
+    }).then(j<Notif[]>),
   managerDecide: (manager_id: string, product_id: string, decision: string) =>
     fetch(`${API}/manager/${manager_id}/products/${product_id}/decision`, {
       method: "POST",
@@ -247,6 +254,9 @@ export type InvestigationSummary = {
   id: string;
   product_id: string | null;
   product_title: string | null;
+  seller_id: string | null;
+  seller_name: string | null;
+  manager: string | null;
   order_id: string | null;
   trigger: string;
   status: string;
@@ -254,6 +264,47 @@ export type InvestigationSummary = {
   decision: string | null;
   action: string | null;
   confidence: number | null;
+  evidence: string[];
+  buyer_explanation: string | null;
   created_at: string;
 };
 export type InvestigationList = { count: number; investigations: InvestigationSummary[] };
+
+export type Notif = {
+  id: string;
+  audience: string;
+  recipient_id: string | null;
+  subject: string;
+  body: string;
+  priority: string;
+  related_id: string | null;
+  created_at: string;
+};
+
+export type ManagerSellerProduct = {
+  product_id: string;
+  title: string;
+  status: string;
+  rating: number | null;
+  review_count: number;
+  complaint: { label: string; agreement: number; count: number } | null;
+  needs_action: boolean;
+};
+export type ManagerSeller = {
+  seller_id: string;
+  name: string;
+  rating: number;
+  trust_flags: string[];
+  case_count: number;
+  account_age_days: number | null;
+  banned: boolean;
+  product_count: number;
+  flagged_count: number;
+  products: ManagerSellerProduct[];
+};
+export type ManagerSellers = {
+  manager_id: string;
+  name: string;
+  seller_count: number;
+  sellers: ManagerSeller[];
+};

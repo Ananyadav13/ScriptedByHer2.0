@@ -1,11 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type Draft } from "@/lib/api";
+import Link from "next/link";
+import { api, type Draft, type Notif, type Product } from "@/lib/api";
+import { statusMeta } from "@/lib/decisions";
 import { Badge, Button, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
 import { Trusty, SpeechBubble } from "@/components/Mascot";
 
-const SELLER = "seller_fixable";
+const SELLERS = [
+  { id: "seller_fixable", name: "HomeComfort" },
+  { id: "seller_scam", name: "MegaDiscount Hub" },
+  { id: "seller_kids", name: "LittleStars Kids" },
+  { id: "seller_gadgets", name: "TechBazaar" },
+];
 
 type Lang = "en" | "hi" | "ta";
 const LANGS: { key: Lang; label: string }[] = [
@@ -37,38 +44,58 @@ const TIPS: Record<Lang, Record<string, string>> = {
   },
   ta: {
     intro: "வணக்கம்! நான் Trusty. வாங்குபவர்கள் நம்பும் பொருளை பட்டியலிட உதவுவேன். மூன்று விஷயங்கள் முக்கியம்.",
-    ok: "அருமை — உங்கள் பட்டியலில் எல்லாம் உள்ளது. இது நம்பிக்கையை அதிகரிக்கும், திரும்பப்பெறுதலைக் குறைக்கும்!",
+    ok: "அருமை — உங்கள் பட்டியலில் எல்லாம் உள்ளது!",
     size_chart_json: "உண்மையான அளவுகளைச் சேர்க்கவும் (மார்பு, நீளம் cm). சரியான அளவு = குறைவான returns.",
-    fabric_claim: "உண்மையான பொருளைச் சொல்லுங்கள் — எ.கா. “100% பருத்தி”. நேர்மை தகராறைத் தவிர்க்கும்.",
+    fabric_claim: "உண்மையான பொருளைச் சொல்லுங்கள் — எ.கா. “100% பருத்தி”.",
     listing_video_path: "பொருளின் குறு வீடியோவைப் பதிவு செய்யுங்கள். தகராறின் போது இதுவே சான்று.",
   },
 };
 
-const SAMPLE_CHART = [
-  { size: "single", chest: 90, length: 220 },
-  { size: "double", chest: 150, length: 230 },
-];
+const SAMPLE_CHART = [{ size: "single", chest: 90, length: 220 }];
 
 export default function SellerPage() {
+  const [seller, setSeller] = useState(SELLERS[0]);
   const [lang, setLang] = useState<Lang>("en");
 
-  // ---- new-listing gate ----
+  // my listings + notifications
+  const [products, setProducts] = useState<Product[] | null>(null);
+  const [notifs, setNotifs] = useState<Notif[]>([]);
+  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async (sid: string) => {
+    setProducts(null);
+    setDrafts(null);
+    const [all, n, d] = await Promise.allSettled([
+      api.products(),
+      api.notificationsFor("seller", sid),
+      api.sellerDrafts(sid),
+    ]);
+    setProducts(all.status === "fulfilled" ? all.value.filter((p) => p.seller_id === sid) : []);
+    setNotifs(n.status === "fulfilled" ? n.value : []);
+    setDrafts(d.status === "fulfilled" ? d.value.drafts : []);
+  }, []);
+  useEffect(() => {
+    load(seller.id);
+  }, [seller, load]);
+
+  // new-listing gate
   const [category, setCategory] = useState("apparel");
   const [hasChart, setHasChart] = useState(false);
   const [fabric, setFabric] = useState("");
   const [hasVideo, setHasVideo] = useState(false);
-  const [gate, setGate] = useState<{ allowed: boolean; missing: string[]; required: string[] } | null>(
-    null,
-  );
+  const [gate, setGate] = useState<{ allowed: boolean; missing: string[]; required: string[] } | null>(null);
 
   useEffect(() => {
-    const body = {
-      category,
-      size_chart_json: hasChart ? { rows: SAMPLE_CHART } : null,
-      fabric_claim: fabric || null,
-      listing_video_path: hasVideo ? "media/videos/listing_demo.mp4" : null,
-    };
-    api.listingCheck(body).then(setGate).catch(() => setGate(null));
+    api
+      .listingCheck({
+        category,
+        size_chart_json: hasChart ? { rows: SAMPLE_CHART } : null,
+        fabric_claim: fabric || null,
+        listing_video_path: hasVideo ? "media/videos/listing_demo.mp4" : null,
+      })
+      .then(setGate)
+      .catch(() => setGate(null));
   }, [category, hasChart, fabric, hasVideo]);
 
   const firstMissing = gate?.missing?.[0];
@@ -78,37 +105,20 @@ export default function SellerPage() {
     return TIPS[lang][firstMissing ?? "intro"] ?? TIPS[lang].intro;
   }, [gate, firstMissing, lang]);
 
-  // ---- fix drafts ----
-  const [drafts, setDrafts] = useState<Draft[] | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const loadDrafts = useCallback(async () => {
-    try {
-      const r = await api.sellerDrafts(SELLER);
-      setDrafts(r.drafts);
-    } catch {
-      setDrafts([]);
-    }
-  }, []);
-  useEffect(() => {
-    loadDrafts();
-  }, [loadDrafts]);
-
   const generateDrafts = async () => {
     setBusy(true);
     try {
-      await api.audit(false); // deterministic sweep creates the fix draft
-      await loadDrafts();
+      await api.audit(false);
+      await load(seller.id);
     } finally {
       setBusy(false);
     }
   };
-
   const approve = async (id: string) => {
     setBusy(true);
     try {
       await api.approveDraft(id);
-      await loadDrafts();
+      await load(seller.id);
     } finally {
       setBusy(false);
     }
@@ -116,13 +126,73 @@ export default function SellerPage() {
 
   return (
     <Page>
-      <SectionTitle
-        eyebrow="Seller studio"
-        title="List with confidence"
-        sub="Trusty guides you through every field buyers need — in your language."
-      />
+      <SectionTitle eyebrow="Seller studio" title="Your shop" sub="List with confidence, see what needs fixing, and approve AI-drafted corrections." />
 
-      {/* Mascot + language */}
+      {/* seller switcher */}
+      <div className="mb-5 flex flex-wrap gap-2">
+        {SELLERS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => setSeller(s)}
+            className={`rounded-xl border px-4 py-2 text-sm transition ${
+              seller.id === s.id ? "border-brand bg-brand-wash text-brand-ink" : "border-line bg-surface text-ink-soft hover:bg-[#f2f3f8]"
+            }`}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+
+      {/* notifications */}
+      {notifs.length > 0 && (
+        <div className="mb-6">
+          <h2 className="mb-2 text-sm font-semibold text-ink">🔔 Notifications</h2>
+          <div className="space-y-2">
+            {notifs.map((n) => (
+              <Card key={n.id} className="flex items-start justify-between gap-3 p-3">
+                <div>
+                  <div className="text-sm font-medium text-ink">{n.subject}</div>
+                  <p className="text-xs text-ink-soft">{n.body}</p>
+                </div>
+                <Badge tone={n.priority === "immediate" ? "rose" : n.priority === "high" ? "amber" : "neutral"}>
+                  {n.priority}
+                </Badge>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* my listings */}
+      <div className="mb-6">
+        <h2 className="mb-2 text-sm font-semibold text-ink">My listings</h2>
+        {products === null ? (
+          <Spinner />
+        ) : products.length === 0 ? (
+          <Empty>No listings.</Empty>
+        ) : (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {products.map((p) => {
+              const sm = statusMeta(p.status);
+              return (
+                <Card key={p.id} className="flex items-center gap-3 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/products/${p.id}.jpg`} alt="" className="h-12 w-12 rounded-md bg-[#f2f2f7] object-contain" />
+                  <div className="min-w-0 flex-1">
+                    <Link href={`/product/${p.id}`} className="line-clamp-1 text-sm font-medium text-ink hover:text-brand-ink">
+                      {p.title}
+                    </Link>
+                    <div className="text-xs text-ink-faint">₹{p.price}</div>
+                  </div>
+                  <Badge tone={sm.tone}>{sm.label}</Badge>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* mascot + new listing + drafts */}
       <Card className="mb-6 p-5">
         <div className="flex items-start gap-4">
           <Trusty mood={gate?.allowed ? "cheer" : firstMissing ? "think" : "happy"} />
@@ -146,49 +216,31 @@ export default function SellerPage() {
       </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* New listing gate */}
         <Card className="p-5">
           <h2 className="font-semibold text-ink">New listing</h2>
           <p className="text-sm text-ink-soft">A listing goes live only when the essentials are present.</p>
-
           <div className="mt-4 space-y-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-faint">Category</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
-              >
+              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm">
                 {["apparel", "footwear", "home", "electronics"].map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
-
             <label className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-sm">
               <span className="text-ink">Size chart / measurements</span>
               <input type="checkbox" checked={hasChart} onChange={(e) => setHasChart(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" />
             </label>
-
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-faint">Fabric / material claim</label>
-              <input
-                value={fabric}
-                onChange={(e) => setFabric(e.target.value)}
-                placeholder="e.g. 100% cotton"
-                className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm"
-              />
+              <input value={fabric} onChange={(e) => setFabric(e.target.value)} placeholder="e.g. 100% cotton" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
             </div>
-
             <label className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-sm">
               <span className="text-ink">🎥 Listing video recorded</span>
               <input type="checkbox" checked={hasVideo} onChange={(e) => setHasVideo(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" />
             </label>
           </div>
-
-          {/* gate result */}
           <div className="mt-5 border-t border-line pt-4">
             {gate ? (
               <>
@@ -198,9 +250,7 @@ export default function SellerPage() {
                     return (
                       <div key={f} className="flex items-center gap-2 text-sm">
                         <span className={missing ? "text-rose" : "text-green"}>{missing ? "○" : "✓"}</span>
-                        <span className={missing ? "text-ink-soft" : "text-ink line-through-none"}>
-                          {FIELD_LABEL[f] ?? f}
-                        </span>
+                        <span className={missing ? "text-ink-soft" : "text-ink"}>{FIELD_LABEL[f] ?? f}</span>
                       </div>
                     );
                   })}
@@ -208,9 +258,7 @@ export default function SellerPage() {
                 <button
                   disabled={!gate.allowed}
                   className={`mt-4 w-full rounded-xl px-4 py-2.5 text-sm font-medium transition ${
-                    gate.allowed
-                      ? "bg-brand text-white hover:bg-brand-ink"
-                      : "cursor-not-allowed bg-[#eef0f4] text-ink-faint"
+                    gate.allowed ? "bg-brand text-white hover:bg-brand-ink" : "cursor-not-allowed bg-[#eef0f4] text-ink-faint"
                   }`}
                 >
                   {gate.allowed ? "Publish listing" : `Add ${gate.missing.length} more to publish`}
@@ -222,16 +270,12 @@ export default function SellerPage() {
           </div>
         </Card>
 
-        {/* Fix drafts */}
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-ink">Suggested fixes</h2>
             <Badge tone="brand">{drafts?.length ?? 0} pending</Badge>
           </div>
-          <p className="text-sm text-ink-soft">
-            Agent 2 drafts a correction from clustered complaints. You approve — one tap.
-          </p>
-
+          <p className="text-sm text-ink-soft">Agent 2 drafts a correction from clustered complaints. You approve — one tap.</p>
           <div className="mt-4 space-y-3">
             {drafts === null && <Spinner />}
             {drafts !== null && drafts.length === 0 && (

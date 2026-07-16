@@ -1,4 +1,6 @@
 """Pydantic DTOs + agent structured outputs."""
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -25,6 +27,7 @@ class ReviewOut(BaseModel):
     text: str
     reviewer_account_age_days: int
     has_video: bool
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True

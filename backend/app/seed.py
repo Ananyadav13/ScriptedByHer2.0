@@ -55,10 +55,13 @@ def _seed(db):
     db.add_all([
         Manager(id="mgr_north", name="Priya (North zone)"),
         Manager(id="mgr_south", name="Arjun (South zone)"),
+        Manager(id="mgr_west", name="Rohan (West zone)"),
     ])
 
     # ---------- SELLERS (manager_id links each to a business manager) ----------
+    # A spread of ratings + trust profiles so the manager/catalog views have real depth.
     sellers = [
+        # --- scenario sellers (load-bearing IDs) ---
         Seller(id="seller_counterfeit", name="LuxDeals Store", rating=3.1,
                account_created_at=_dt(20), trust_flags=["new_account_cluster"],
                manager_id="mgr_north"),
@@ -73,9 +76,25 @@ def _seed(db):
                case_count=5, manager_id="mgr_north"),  # repeat offender -> ban path
         Seller(id="seller_fixable", name="HomeComfort", rating=2.4,
                account_created_at=_dt(400), trust_flags=[], manager_id="mgr_south"),
-        # honest seller of a well-loved cheap knockoff -> relabel path (not ban)
         Seller(id="seller_knockoff", name="StreetStyle Optics", rating=4.2,
                account_created_at=_dt(450), trust_flags=[], manager_id="mgr_north"),
+        # --- depth sellers (varied ratings / fraud levels) ---
+        Seller(id="seller_gadgets", name="TechBazaar", rating=4.6,
+               account_created_at=_dt(1100), trust_flags=[], manager_id="mgr_south"),
+        Seller(id="seller_beauty", name="GlowUp Cosmetics", rating=4.3,
+               account_created_at=_dt(700), trust_flags=[], manager_id="mgr_west"),
+        Seller(id="seller_scam", name="MegaDiscount Hub", rating=1.4,
+               account_created_at=_dt(15), trust_flags=["new_account_cluster", "quality_complaints"],
+               case_count=8, manager_id="mgr_west"),  # serial fraudster -> ban
+        Seller(id="seller_kids", name="LittleStars Kids", rating=4.5,
+               account_created_at=_dt(820), trust_flags=[], manager_id="mgr_west"),
+        Seller(id="seller_jewelry", name="ShineOn Jewels", rating=2.1,
+               account_created_at=_dt(260), trust_flags=["quality_complaints"],
+               case_count=3, manager_id="mgr_north"),
+        Seller(id="seller_saree", name="SilkTradition", rating=4.0,
+               account_created_at=_dt(540), trust_flags=[], manager_id="mgr_south"),
+        Seller(id="seller_mobile", name="SmartWorld Mobiles", rating=3.5,
+               account_created_at=_dt(330), trust_flags=[], manager_id="mgr_west"),
     ]
     db.add_all(sellers)
 
@@ -134,6 +153,41 @@ def _seed(db):
         Product(id="prod_normal_notebook", seller_id="seller_shoes",
                 title="A5 Ruled Notebook 200 pages", brand="StepUp", category="stationery",
                 price=99, mrp=199, images=["notebook.jpg"], fabric_claim=None, status="active"),
+        # --- depth catalog (varied sellers / ratings / issues) ---
+        Product(id="prod_gadget_powerbank", seller_id="seller_gadgets",
+                title="20000mAh Fast-Charging Power Bank", brand="TechBazaar", category="electronics",
+                price=1199, mrp=2499, images=["powerbank.jpg"], fabric_claim=None, status="active"),
+        Product(id="prod_gadget_earphones", seller_id="seller_gadgets",
+                title="Wireless Bluetooth Earphones (40h)", brand="TechBazaar", category="electronics",
+                price=899, mrp=1999, images=["earphones2.jpg"], fabric_claim=None, status="active"),
+        Product(id="prod_beauty_serum", seller_id="seller_beauty",
+                title="Vitamin C Face Serum 30ml", brand="GlowUp", category="beauty",
+                price=349, mrp=799, images=["serum.jpg"], fabric_claim=None, status="active"),
+        Product(id="prod_beauty_lipstick", seller_id="seller_beauty",
+                title="Matte Liquid Lipstick Set of 5", brand="GlowUp", category="beauty",
+                price=449, mrp=1199, images=["lipstick.jpg"], fabric_claim=None, status="active"),
+        Product(id="prod_kids_tshirt", seller_id="seller_kids",
+                title="Kids Cartoon Print T-Shirt (Cotton)", brand="LittleStars", category="apparel",
+                price=299, mrp=699, images=["kids.jpg"], fabric_claim="cotton", status="active",
+                size_chart_json=None),  # missing size chart -> Agent-2 flag
+        Product(id="prod_saree_silk", seller_id="seller_saree",
+                title="Banarasi Silk Saree with Blouse", brand="SilkTradition", category="apparel",
+                price=1499, mrp=3999, images=["saree.jpg"], fabric_claim="silk", status="active"),
+        Product(id="prod_mobile_case", seller_id="seller_mobile",
+                title="Shockproof Phone Back Cover", brand="SmartWorld", category="electronics",
+                price=199, mrp=499, images=["case.jpg"], fabric_claim=None, status="active"),
+        # already handled by Agent 2: quality-complaint cluster -> held for info (needs QC)
+        Product(id="prod_jewelry_necklace", seller_id="seller_jewelry",
+                title="Gold-Plated Kundan Necklace Set", brand="ShineOn", category="accessories",
+                price=699, mrp=2499, images=["necklace.jpg"], fabric_claim=None, status="needs_info"),
+        # already handled by Agent 1: a second counterfeit (branded watch far below MRP) -> LOCKED
+        Product(id="prod_scam_watch", seller_id="seller_scam",
+                title="Luxury Chronograph Watch (Branded)", brand="Omega", category="watches",
+                price=799, mrp=450000, images=["scamwatch.jpg"], fabric_claim=None, status="locked"),
+        # already handled by Agent 2: fraud-review cluster -> SUSPENDED
+        Product(id="prod_scam_perfume", seller_id="seller_scam",
+                title="Imported Luxury Perfume 100ml", brand="MegaDiscount", category="beauty",
+                price=299, mrp=4999, images=["perfume.jpg"], fabric_claim=None, status="suspended"),
     ]
     db.add_all(products)
 
@@ -218,6 +272,46 @@ def _seed(db):
         reviews.append(Review(id=f"rev_dmg_{i}", product_id="prod_damaged_courier",
                               rating=1, text=dmg_txt[i % 4], created_at=_dt(20 + i % 60),
                               reviewer_account_age_days=300))
+
+    # ---- depth-catalog reviews (varied, established accounts unless noted) ----
+    pos = ["Great product, value for money", "Works perfectly, very happy",
+           "Good quality, exactly as described", "Fast delivery, nice packaging",
+           "Just what I wanted, recommend"]
+    beauty_pos = ["Skin feels great, will reorder", "Genuine product, good results",
+                  "Lovely shades, long lasting", "Worth the price, authentic", "Absolutely loved it!"]
+    def _add(pid, sid, n, rating_fn, texts, age0, age_step=8, day_mod=40, day0=0, age=None):
+        for i in range(n):
+            reviews.append(Review(
+                id=f"rev_{sid}_{i}", product_id=pid, rating=rating_fn(i),
+                text=texts[i % len(texts)], created_at=_dt(day0 + i % day_mod),
+                reviewer_account_age_days=(age if age is not None else age0 + i * age_step)))
+    _add("prod_gadget_powerbank", "pb", 42, lambda i: 5 if i % 5 else 4, pos, 250)
+    _add("prod_gadget_earphones", "ep", 31, lambda i: 5 if i % 4 else 4, pos, 300, 7)
+    _add("prod_beauty_serum", "bs", 26, lambda i: 5 if i % 5 else 4, beauty_pos, 200, 10)
+    _add("prod_beauty_lipstick", "bl", 21, lambda i: 5 if i % 4 else 4, beauty_pos, 220, 9)
+    _add("prod_kids_tshirt", "kd", 18, lambda i: 4 if i % 3 else 5,
+         ["Soft cotton, kids love it", "Good fit for my 4yr old", "Nice print, washes well",
+          "Size ran a bit small", "Cute and comfortable"], 260, 12)
+    _add("prod_saree_silk", "sr", 22, lambda i: 4 if i % 2 else 5,
+         ["Beautiful saree, rich look", "Silk quality is good", "Loved the colour",
+          "Perfect for functions", "Slight colour variation but ok"], 280, 11)
+    _add("prod_mobile_case", "mc", 16, lambda i: 3 if i % 2 else 4,
+         ["Decent cover, fits well", "Ok for the price", "Average quality",
+          "Protects the phone fine", "Buttons a bit stiff"], 180, 9, day_mod=50)
+    # jewelry: quality-complaint cluster -> Agent-2 correction/suspend candidate
+    _add("prod_jewelry_necklace", "jw", 700, lambda i: 2 if i % 5 else 1,
+         ["Gold plating faded in a week", "Turned black quickly, poor quality",
+          "Looks cheap, not as pictured", "A stone fell off after one use"],
+         0, day_mod=55, age=240)
+    # scam watch: counterfeit burst (5-star from brand-new accounts, ₹799 'Omega')
+    _add("prod_scam_watch", "sw", 14, lambda i: 5,
+         ["Best Omega copy, looks real!", "Amazing luxury watch so cheap",
+          "Genuine branded piece, wow", "Original quality, superb"], 0, day0=2, age=3)
+    # scam perfume: fraud cluster -> suspend candidate
+    _add("prod_scam_perfume", "sp", 600, lambda i: 1,
+         ["Fake, smells like spirit", "Not original, cheap knockoff",
+          "Scam product, totally avoid", "Nothing like the brand claimed"],
+         0, day_mod=50, age=150)
     db.add_all(reviews)
 
     # ---------- BUYERS ----------
@@ -266,6 +360,12 @@ def _seed(db):
                             product_id="prod_counterfeit_rolex", hub_id="hub_normal",
                             otp_scan_count=1, items_count=1, delivered_at=_dt(5 + i % 20),
                             hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"))
+    # order volume for the second counterfeit ('Omega' watch) so it too clears the floor
+    for i in range(22):
+        orders.append(Order(id=f"order_sw_{i}", buyer_id="buyer_normal",
+                            product_id="prod_scam_watch", hub_id="hub_normal",
+                            otp_scan_count=1, items_count=1, delivered_at=_dt(5 + i % 20),
+                            hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"))
     db.add_all(orders)
 
     # ---------- SIZE DRIFT ----------
@@ -274,4 +374,99 @@ def _seed(db):
                   true_measurement_delta=-1.0, sample_size=214),  # runs 1 size small
     ])
 
-    db.add_all([])  # investigations / catalog_actions start empty
+    # ---------- NOTIFICATIONS (role-wise inbox: seller / manager / buyer) ----------
+    from .models import Notification
+
+    def _ntf(nid, audience, recipient, subject, body, priority="normal", related=None, days=1):
+        return Notification(id=nid, audience=audience, recipient_id=recipient, subject=subject,
+                            body=body, priority=priority, related_id=related, created_at=_dt(days))
+
+    db.add_all([
+        # --- SELLER inbox: what action was taken / what's needed ---
+        _ntf("ntf_s1", "seller", "seller_lowrated", "Listing suspended",
+             "‘Wireless Earbuds Pro Max’ was suspended after a fraud/quality complaint cluster. "
+             "Contact your manager to appeal.", "immediate", "prod_lowrated_fraud"),
+        _ntf("ntf_s2", "seller", "seller_fixable", "Action needed: add a size chart",
+             "‘Cotton Bedsheet Double’ is in a correction window — add measurements to go back to full visibility.",
+             "high", "prod_fixable_bedsheet"),
+        _ntf("ntf_s3", "seller", "seller_kids", "Action needed: add a size chart",
+             "‘Kids Cartoon Print T-Shirt’ is live but missing a size chart. Add one to reduce returns.",
+             "normal", "prod_kids_tshirt"),
+        _ntf("ntf_s4", "seller", "seller_jewelry", "Quality complaints rising",
+             "‘Gold-Plated Kundan Necklace’ has a growing ‘plating fades’ complaint cluster. Review your QC.",
+             "high", "prod_jewelry_necklace"),
+        _ntf("ntf_s5", "seller", "seller_scam", "Multiple listings under review",
+             "Two of your listings match a counterfeit/fraud pattern and are pending manager review.",
+             "immediate", "prod_scam_watch"),
+        _ntf("ntf_s6", "seller", "seller_counterfeit", "Listing locked for authenticity",
+             "‘Rolex Submariner Watch’ was locked (price far below MRP + new-account review burst). "
+             "Submit a quality-check video to appeal.", "immediate", "prod_counterfeit_rolex"),
+        # --- MANAGER inbox: what's in my queue ---
+        _ntf("ntf_m1", "manager", "mgr_north", "3 listings need your decision",
+             "Priya, your queue has locks/holds awaiting sign-off (counterfeit, jewelry quality, knockoff).",
+             "high"),
+        _ntf("ntf_m2", "manager", "mgr_south", "Correction window opened",
+             "Arjun, HomeComfort’s bedsheet entered a correction window — a size-chart fix is drafted.",
+             "normal", "prod_fixable_bedsheet"),
+        _ntf("ntf_m3", "manager", "mgr_west", "Fraud pattern detected",
+             "Rohan, ‘MegaDiscount Hub’ (15-day-old, 8 cases) has two fraud-flagged listings. Consider a ban.",
+             "immediate"),
+        # --- BUYER inbox: transparency + safety ---
+        _ntf("ntf_b1", "buyer", "buyer_normal", "A listing you viewed was locked",
+             "The ‘Rolex Submariner Watch’ you viewed was locked for authenticity concerns. "
+             "Here are verified alternatives from trusted sellers.", "high", "prod_counterfeit_rolex"),
+        _ntf("ntf_b2", "buyer", "buyer_normal", "Your size was auto-adjusted",
+             "For StepUp footwear we suggested size 9 (you usually take 8) — this brand runs 1 size small.",
+             "normal", "prod_size_shoes"),
+        _ntf("ntf_b3", "buyer", "buyer_normal", "Refund fast-tracked",
+             "Your delivery dispute was corroborated by two independent signals — refund is on the way.",
+             "normal", "order_otp_dispute"),
+    ])
+
+    # ---------- SEEDED HISTORY: past cases the agents already resolved ----------
+    # Gives the Agent-1 "cases resolved" view and the manager queue real content on
+    # first load (the scenario products — rolex/kurti/viral — stay ACTIVE for live demos).
+    def _inv(iid, product_id, order_id, trigger, decision, action, conf, evidence, expl, days):
+        return Investigation(
+            id=iid, product_id=product_id, order_id=order_id, trigger=trigger, status="done",
+            tool_calls_log_json=[], created_at=_dt(days),
+            verdict_json={"decision": decision, "action": action, "confidence": conf,
+                          "evidence": evidence, "buyer_explanation": expl,
+                          "recommended_action": "", "suggested_remedy": ""})
+
+    db.add_all([
+        _inv("inv_h1", "prod_scam_watch", None, "pre_purchase", "counterfeit_lock", "lock", 0.98,
+             ["'Omega' priced at 0.18% of MRP (< 35%)", "14 five-star reviews, 100% from 3-day-old accounts",
+              "seller MegaDiscount Hub is 15 days old with 8 open cases"],
+             "This branded watch was locked — the price and review pattern indicate a counterfeit.", 2),
+        _inv("inv_h2", "prod_size_shoes", "order_otp_dispute", "post_delivery", "refund_fast_track", "refund", 0.95,
+             ["1 OTP scanned for 3 items", "delivered via a flagged hub (6 cases)", "no geo-verified photo"],
+             "Two independent signals corroborated the dispute — refund fast-tracked.", 1),
+        _inv("inv_h3", "prod_viral_honest", None, "tripwire", "cleared", "none", 0.93,
+             ["review spike but 0% from new accounts", "seller 900 days old, rating 4.4"],
+             "A volume spike from genuine aged accounts — a real viral seller, not fraud. Cleared.", 3),
+        _inv("inv_h4", "prod_fabric_kurti", "order_fabric_dispute", "post_delivery", "recommend_review", "route_manager_review", 0.62,
+             ["material claim 'pure cotton' disputed", "negative fabric-complaint cluster"],
+             "Uncertain media evidence — recommended to a human manager rather than auto-acting.", 4),
+        _inv("inv_h5", "prod_fabric_kurti", "order_serial", "post_delivery", "manual_review", "route_manual_review", 0.7,
+             ["buyer has 7 prior claims (>= 5) -> serial-claimer pattern"],
+             "Routed to manual review — the claimant has a serial-claim history.", 5),
+        _inv("inv_h6", "prod_jewelry_necklace", None, "tripwire", "hold_pending_fix", "hold", 0.8,
+             ["quality-complaint cluster: gold plating fades", "trustworthy rating fell below 3.0"],
+             "Held pending seller quality-check after a plating-quality complaint cluster.", 2),
+    ])
+
+    # catalog actions so locked/held/suspended listings show WHY + populate the manager queue
+    def _act(aid, product_id, action, decision, evidence, days):
+        return CatalogAction(id=aid, product_id=product_id, action=action,
+                             evidence_json={"decision": decision, "evidence": evidence},
+                             seller_approved=False, created_at=_dt(days))
+
+    db.add_all([
+        _act("act_h1", "prod_scam_watch", "lock", "counterfeit_lock",
+             ["price 0.18% of MRP", "5-star burst from 3-day accounts"], 2),
+        _act("act_h2", "prod_jewelry_necklace", "hold", "hold_pending_fix",
+             ["gold-plating quality complaints", "trustworthy rating < 3.0"], 2),
+        _act("act_h3", "prod_scam_perfume", "suspend", "delist_suspend",
+             ["fraud-review cluster (600 x 1-star)", "seller flagged, 8 cases"], 2),
+    ])

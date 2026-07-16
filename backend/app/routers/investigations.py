@@ -56,14 +56,20 @@ def list_investigations(limit: int = 25, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
+    from ..models import Manager, Seller
     out = []
     for inv in rows:
         p = db.get(Product, inv.product_id) if inv.product_id else None
+        seller = db.get(Seller, p.seller_id) if p else None
+        manager = db.get(Manager, seller.manager_id) if seller and seller.manager_id else None
         v = inv.verdict_json or {}
         out.append({
             "id": inv.id,
             "product_id": inv.product_id,
             "product_title": p.title if p else None,
+            "seller_id": p.seller_id if p else None,
+            "seller_name": seller.name if seller else None,
+            "manager": manager.name if manager else None,
             "order_id": inv.order_id,
             "trigger": inv.trigger,
             "status": inv.status,
@@ -71,6 +77,8 @@ def list_investigations(limit: int = 25, db: Session = Depends(get_db)):
             "decision": v.get("decision"),
             "action": v.get("action"),
             "confidence": v.get("confidence"),
+            "evidence": v.get("evidence", []),
+            "buyer_explanation": v.get("buyer_explanation"),
             "created_at": inv.created_at.isoformat(),
         })
     return {"count": len(out), "investigations": out}

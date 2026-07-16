@@ -11,14 +11,18 @@ router = APIRouter(tags=["ops"])
 
 
 @router.get("/notifications")
-def list_notifications(audience: str | None = None, db: Session = Depends(get_db)):
+def list_notifications(audience: str | None = None, recipient_id: str | None = None,
+                       db: Session = Depends(get_db)):
     q = db.query(Notification)
     if audience:
         q = q.filter(Notification.audience == audience)
+    if recipient_id:
+        q = q.filter(Notification.recipient_id == recipient_id)
     rows = q.order_by(Notification.created_at.desc()).all()
     return [
         {
-            "id": n.id, "audience": n.audience, "subject": n.subject, "body": n.body,
+            "id": n.id, "audience": n.audience, "recipient_id": n.recipient_id,
+            "subject": n.subject, "body": n.body,
             "priority": n.priority, "related_id": n.related_id,
             "created_at": n.created_at.isoformat(),
         }

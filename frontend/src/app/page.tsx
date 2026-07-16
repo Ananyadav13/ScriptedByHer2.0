@@ -2,6 +2,7 @@ import Link from "next/link";
 import { api, type Product } from "@/lib/api";
 import { SCENARIOS } from "@/lib/scenarios";
 import { ProductCard } from "@/components/ProductCard";
+import { BuyerAlerts } from "@/components/BuyerAlerts";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,9 @@ export default async function Home() {
           <span className="text-brand">📍</span> Delivering to <b className="text-ink">Jabalpur - 482005</b> ›
         </div>
       </div>
+
+      {/* buyer transparency alerts */}
+      <BuyerAlerts />
 
       {/* category circles */}
       <div className="border-b border-line bg-surface">

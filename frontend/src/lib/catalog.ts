@@ -100,17 +100,24 @@ export type ReviewDisplay = {
   photos: number;
 };
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 export function reviewDisplay(r: Review, productId: string): ReviewDisplay {
   const h = hash(r.id + productId);
   const name = NAMES[h % NAMES.length];
-  const day = (h % 27) + 1;
-  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][h % 12];
-  const year = 2025 + ((h >> 3) % 2);
+  // Use the REAL review date so a coordinated burst reads as same-day/recent, not spread out.
+  let date: string;
+  if (r.created_at) {
+    const d = new Date(r.created_at);
+    date = `${String(d.getDate()).padStart(2, "0")} ${MONTHS[d.getMonth()]}, ${d.getFullYear()}`;
+  } else {
+    date = `${String((h % 27) + 1).padStart(2, "0")} ${MONTHS[h % 12]}, ${2025 + ((h >> 3) % 2)}`;
+  }
   const helpful = (h % 60) + (r.rating >= 4 ? 8 : 1);
   const verdictLabel =
     r.rating >= 5 ? "Very Good" : r.rating === 4 ? "Good" : r.rating === 3 ? "Ok-Ok" : r.rating === 2 ? "Bad" : "Very Bad";
   const photos = r.has_video ? 2 : h % 3 === 0 ? 1 : 0;
-  return { name, date: `${String(day).padStart(2, "0")} ${month}, ${year}`, helpful, verdictLabel, photos };
+  return { name, date, helpful, verdictLabel, photos };
 }
 
 // star-rating -> tone (matches Meesho: green for good, amber mid, red for bad)
