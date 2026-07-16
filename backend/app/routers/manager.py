@@ -109,6 +109,43 @@ def manager_sellers(manager_id: str, db: Session = Depends(get_db)):
     return {"manager_id": manager_id, "name": manager.name, "seller_count": len(out), "sellers": out}
 
 
+def _api_catalog(manager_id: str) -> list[dict]:
+    """The endpoints a business manager can call programmatically with their key."""
+    return [
+        {"method": "GET", "path": f"/manager/{manager_id}/sellers",
+         "desc": "Your sellers + each listing's status & complaint"},
+        {"method": "GET", "path": f"/manager/{manager_id}/queue",
+         "desc": "Listings awaiting your decision (locks/holds/flags)"},
+        {"method": "POST", "path": f"/manager/{manager_id}/products/{{product_id}}/decision",
+         "desc": "unlock | confirm_lock | delete a listing"},
+        {"method": "GET", "path": "/notifications?audience=manager&recipient_id=" + manager_id,
+         "desc": "Your alert inbox"},
+    ]
+
+
+@router.get("/manager/{manager_id}/api-access")
+def manager_api_access(manager_id: str, db: Session = Depends(get_db)):
+    """A manager's programmatic-access credentials + the endpoints they can call."""
+    manager = db.get(Manager, manager_id)
+    if not manager:
+        raise HTTPException(404, "manager not found")
+    return {"manager_id": manager_id, "name": manager.name, "api_key": manager.api_key,
+            "base_url": "https://api.buildtrust.example/v1", "endpoints": _api_catalog(manager_id)}
+
+
+@router.post("/manager/{manager_id}/api-access/rotate")
+def rotate_api_key(manager_id: str, db: Session = Depends(get_db)):
+    """Generate (rotate) a fresh API key for this manager."""
+    import secrets
+    manager = db.get(Manager, manager_id)
+    if not manager:
+        raise HTTPException(404, "manager not found")
+    zone = manager_id.replace("mgr_", "")
+    manager.api_key = f"bt_live_{zone}_{secrets.token_urlsafe(12)}"
+    db.commit()
+    return {"manager_id": manager_id, "api_key": manager.api_key}
+
+
 class ManagerDecision(BaseModel):
     decision: str  # unlock | confirm_lock | delete
 

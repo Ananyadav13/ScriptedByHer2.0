@@ -129,6 +129,12 @@ export const api = {
     fetch(`${API}/manager/${id}/queue`, { cache: "no-store" }).then(j<ManagerQueue>),
   managerSellers: (id: string) =>
     fetch(`${API}/manager/${id}/sellers`, { cache: "no-store" }).then(j<ManagerSellers>),
+  managerApiAccess: (id: string) =>
+    fetch(`${API}/manager/${id}/api-access`, { cache: "no-store" }).then(j<ManagerApiAccess>),
+  rotateApiKey: (id: string) =>
+    fetch(`${API}/manager/${id}/api-access/rotate`, { method: "POST" }).then(
+      j<{ manager_id: string; api_key: string }>,
+    ),
   notificationsFor: (audience: string, recipient_id: string) =>
     fetch(`${API}/notifications?audience=${audience}&recipient_id=${recipient_id}`, {
       cache: "no-store",
@@ -307,4 +313,12 @@ export type ManagerSellers = {
   name: string;
   seller_count: number;
   sellers: ManagerSeller[];
+};
+
+export type ManagerApiAccess = {
+  manager_id: string;
+  name: string;
+  api_key: string | null;
+  base_url: string;
+  endpoints: { method: string; path: string; desc: string }[];
 };

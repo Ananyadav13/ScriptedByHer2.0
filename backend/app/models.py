@@ -13,6 +13,7 @@ class Manager(Base):
     __tablename__ = "managers"
     id: Mapped[str] = mapped_column(String, primary_key=True)
     name: Mapped[str] = mapped_column(String)
+    api_key: Mapped[str | None] = mapped_column(String, nullable=True)  # programmatic access token
 
     sellers: Mapped[list["Seller"]] = relationship(back_populates="manager")
 

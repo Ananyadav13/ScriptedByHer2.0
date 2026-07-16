@@ -223,7 +223,8 @@ export default function SellerPage() {
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-faint">Category</label>
               <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm">
-                {["apparel", "footwear", "home", "electronics"].map((c) => (
+                {["apparel", "footwear", "home", "electronics", "beauty", "accessories",
+                  "jewellery", "kitchen", "watches", "kids", "stationery", "sports"].map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>

@@ -53,9 +53,9 @@ def create_and_seed_if_empty():
 def _seed(db):
     # ---------- MANAGERS (business managers own a book of sellers) ----------
     db.add_all([
-        Manager(id="mgr_north", name="Priya (North zone)"),
-        Manager(id="mgr_south", name="Arjun (South zone)"),
-        Manager(id="mgr_west", name="Rohan (West zone)"),
+        Manager(id="mgr_north", name="Priya (North zone)", api_key="bt_live_north_7Kd2Xp9QaR4mZ"),
+        Manager(id="mgr_south", name="Arjun (South zone)", api_key="bt_live_south_3Fh8Lm5WcT6nB"),
+        Manager(id="mgr_west", name="Rohan (West zone)", api_key="bt_live_west_9Jq1Vs7YbN2xE"),
     ])
 
     # ---------- SELLERS (manager_id links each to a business manager) ----------
@@ -172,7 +172,8 @@ def _seed(db):
                 size_chart_json=None),  # missing size chart -> Agent-2 flag
         Product(id="prod_saree_silk", seller_id="seller_saree",
                 title="Banarasi Silk Saree with Blouse", brand="SilkTradition", category="apparel",
-                price=1499, mrp=3999, images=["saree.jpg"], fabric_claim="silk", status="active"),
+                price=12999, mrp=24999, images=["saree.jpg"], fabric_claim="pure silk", status="active",
+                size_chart_json={"Free Size": "5.5m saree + 0.8m blouse"}),
         Product(id="prod_mobile_case", seller_id="seller_mobile",
                 title="Shockproof Phone Back Cover", brand="SmartWorld", category="electronics",
                 price=199, mrp=499, images=["case.jpg"], fabric_claim=None, status="active"),
@@ -207,18 +208,24 @@ def _seed(db):
         reviews.append(Review(id=f"rev_cf_{i}", product_id="prod_counterfeit_rolex",
                               rating=5, text=cf_txt[i % len(cf_txt)], created_at=_dt(2),
                               reviewer_account_age_days=2))
-    # viral honest: burst of reviews but from OLD accounts (not flagged)
+    # viral honest: a GENUINELY viral product — 11k+ real buyers, 4.7★, growth spread
+    # over ~90 days from OLD/established accounts. High volume + high rating + NO
+    # new-account burst is exactly the honest-viral pattern Agent 1 must clear.
     vi_txt = [
         "Great fit, soft cotton, went viral on reels!",
         "So comfy, perfect for summer 👌",
         "Love the oversized fit, true to size",
         "Fabric is really soft, totally worth it",
         "Trendy and comfortable, highly recommend",
+        "Ordered 3 more for the family, superb",
+        "Colour didn't fade after wash, happy",
     ]
-    for i in range(15):
+    for i in range(11200):
+        # ~4.8 avg: 80% five-star, 15% four, 5% three
+        r = 5 if i % 20 < 16 else (4 if i % 20 < 19 else 3)
         reviews.append(Review(id=f"rev_vi_{i}", product_id="prod_viral_honest",
-                              rating=5, text=vi_txt[i % len(vi_txt)],
-                              created_at=_dt(3), reviewer_account_age_days=400 + i * 20))
+                              rating=r, text=vi_txt[i % len(vi_txt)],
+                              created_at=_dt(1 + i % 90), reviewer_account_age_days=300 + (i % 900)))
     # fabric kurti: negative cluster; two reviews carry videos (Phase 3 vision).
     # video_path points at a REAL review-video asset dropped into media/videos/
     # (or a frames/<dir> of stills). Left None until the physical recordings are

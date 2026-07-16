@@ -9,7 +9,7 @@ export const PRODUCT_IMAGES: Record<string, string[]> = {
   prod_damaged_courier: ["/products/prod_damaged_courier-0.jpg"],
   prod_knockoff_loved: ["/products/prod_knockoff_loved-0.jpg", "/products/prod_knockoff_loved-1.jpg", "/products/prod_knockoff_loved-2.jpg"],
   prod_normal_mug: ["/products/prod_normal_mug-0.jpg", "/products/prod_normal_mug-1.jpg"],
-  prod_normal_notebook: ["/products/prod_normal_notebook-0.jpg", "/products/prod_normal_notebook-1.jpg", "/products/prod_normal_notebook-2.jpg"],
+  prod_normal_notebook: ["/products/prod_normal_notebook-0.jpg", "/products/prod_normal_notebook-1.jpg", "/products/prod_normal_notebook-2.jpg", "/products/prod_normal_notebook-3.jpg"],
   prod_gadget_powerbank: ["/products/prod_gadget_powerbank-0.jpg"],
   prod_gadget_earphones: ["/products/prod_gadget_earphones-0.jpg"],
   prod_beauty_serum: ["/products/prod_beauty_serum-0.jpg", "/products/prod_beauty_serum-1.jpg", "/products/prod_beauty_serum-2.jpg"],

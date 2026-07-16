@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { statusMeta } from "@/lib/decisions";
 import { Badge, Button, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
+import { ManagerApiPanel } from "@/components/ManagerApiPanel";
 
 const PRIORITY_TONE: Record<string, "rose" | "amber" | "neutral"> = {
   immediate: "rose",
@@ -159,6 +160,9 @@ export default function ManagerPage() {
           </button>
         ))}
       </div>
+
+      {/* API access for integrations */}
+      {active && <ManagerApiPanel managerId={active} />}
 
       {/* notifications */}
       {notifs.length > 0 && (
