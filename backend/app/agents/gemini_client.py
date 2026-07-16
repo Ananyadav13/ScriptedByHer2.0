@@ -23,10 +23,12 @@ from google.genai import errors
 from ..config import settings
 
 _RETRYABLE_CODES = {429, 500, 503}
-_MAX_ATTEMPTS = 6
+_DEAD_CODES = {401, 403}   # bad/denied key or project — skip permanently, don't waste retries
+_MAX_ATTEMPTS = 8
 
 _lock = threading.Lock()
 _clients: dict[str, genai.Client] = {}   # key -> client (cached)
+_dead: set[str] = set()                  # keys that returned a permanent auth/permission error
 _start_idx = 0                            # rotates to the last-good key
 
 
@@ -55,21 +57,28 @@ def generate_with_retry(**kwargs):
     """generate_content with backoff on transient errors AND key rotation on
     daily-cap exhaustion. Raises the last error only after every key is spent."""
     global _start_idx
-    keys = _keys()
+    all_keys = _keys()
+    # skip keys we already know are permanently denied (401/403); if that leaves
+    # nothing, fall back to trying them all (maybe the denial was transient).
+    keys = [k for k in all_keys if k not in _dead] or all_keys
     n = len(keys)
     last_exc: Exception | None = None
 
     for attempt in range(_MAX_ATTEMPTS):
         idx = (_start_idx + attempt) % n
+        key = keys[idx]
         try:
-            resp = _client_for(keys[idx]).models.generate_content(**kwargs)
+            resp = _client_for(key).models.generate_content(**kwargs)
             _start_idx = idx  # stick with the key that just worked
             return resp
         except errors.APIError as exc:
             code = getattr(exc, "code", None)
+            last_exc = exc
+            if code in _DEAD_CODES:
+                _dead.add(key)  # denied project/key — never retry it
+                continue        # rotate straight to the next key (doesn't count as a wait)
             if code not in _RETRYABLE_CODES or attempt == _MAX_ATTEMPTS - 1:
                 raise
-            last_exc = exc
             # Sleep only after we've tried every key this round (all rate-limited).
             if (attempt + 1) % n == 0:
                 time.sleep(min(2 ** (attempt // n), 8) + random.random())

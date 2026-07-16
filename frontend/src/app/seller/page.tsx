@@ -51,7 +51,6 @@ const TIPS: Record<Lang, Record<string, string>> = {
   },
 };
 
-const SAMPLE_CHART = [{ size: "single", chest: 90, length: 220 }];
 
 export default function SellerPage() {
   const [seller, setSeller] = useState(SELLERS[0]);
@@ -81,22 +80,33 @@ export default function SellerPage() {
 
   // new-listing gate
   const [category, setCategory] = useState("apparel");
-  const [hasChart, setHasChart] = useState(false);
+  const [meas, setMeas] = useState<Record<string, { chest: string; length: string }>>({});
   const [fabric, setFabric] = useState("");
-  const [hasVideo, setHasVideo] = useState(false);
+  const [videoName, setVideoName] = useState<string | null>(null);
   const [gate, setGate] = useState<{ allowed: boolean; missing: string[]; required: string[] } | null>(null);
 
+  const SIZE_ROWS = ["S", "M", "L", "XL"];
+  const hasChart = Object.values(meas).some((m) => m?.chest || m?.length);
+  const hasVideo = !!videoName;
+  const setCell = (size: string, key: "chest" | "length", val: string) =>
+    setMeas((m) => ({ ...m, [size]: { ...(m[size] ?? { chest: "", length: "" }), [key]: val } }));
+
   useEffect(() => {
+    const rows = SIZE_ROWS.filter((s) => meas[s]?.chest || meas[s]?.length).map((s) => ({
+      size: s,
+      chest: meas[s]?.chest,
+      length: meas[s]?.length,
+    }));
     api
       .listingCheck({
         category,
-        size_chart_json: hasChart ? { rows: SAMPLE_CHART } : null,
+        size_chart_json: rows.length ? { rows } : null,
         fabric_claim: fabric || null,
-        listing_video_path: hasVideo ? "media/videos/listing_demo.mp4" : null,
+        listing_video_path: videoName ? `media/videos/${videoName}` : null,
       })
       .then(setGate)
       .catch(() => setGate(null));
-  }, [category, hasChart, fabric, hasVideo]);
+  }, [category, meas, fabric, videoName]);
 
   const firstMissing = gate?.missing?.[0];
   const tip = useMemo(() => {
@@ -229,18 +239,68 @@ export default function SellerPage() {
                 ))}
               </select>
             </div>
-            <label className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-sm">
-              <span className="text-ink">Size chart / measurements</span>
-              <input type="checkbox" checked={hasChart} onChange={(e) => setHasChart(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" />
-            </label>
+            {/* generic size / measurements form */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-ink-faint">
+                Size chart / measurements (inches)
+              </label>
+              <div className="overflow-hidden rounded-xl border border-line">
+                <div className="grid grid-cols-3 bg-[#f7f7fb] text-[11px] font-medium text-ink-faint">
+                  <div className="px-3 py-1.5">Size</div>
+                  <div className="border-l border-line px-3 py-1.5">Chest</div>
+                  <div className="border-l border-line px-3 py-1.5">Length</div>
+                </div>
+                {SIZE_ROWS.map((s) => (
+                  <div key={s} className="grid grid-cols-3 border-t border-line">
+                    <div className="px-3 py-2 text-sm font-medium text-ink">{s}</div>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="—"
+                      value={meas[s]?.chest ?? ""}
+                      onChange={(e) => setCell(s, "chest", e.target.value)}
+                      className="border-l border-line px-3 py-2 text-sm outline-none focus:bg-brand-wash/40"
+                    />
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      placeholder="—"
+                      value={meas[s]?.length ?? ""}
+                      onChange={(e) => setCell(s, "length", e.target.value)}
+                      className="border-l border-line px-3 py-2 text-sm outline-none focus:bg-brand-wash/40"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1 text-[11px] text-ink-faint">Fill any row to add a size chart.</p>
+            </div>
+
             <div>
               <label className="mb-1 block text-xs font-medium text-ink-faint">Fabric / material claim</label>
               <input value={fabric} onChange={(e) => setFabric(e.target.value)} placeholder="e.g. 100% cotton" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
             </div>
-            <label className="flex items-center justify-between rounded-xl border border-line px-3 py-2.5 text-sm">
-              <span className="text-ink">🎥 Listing video recorded</span>
-              <input type="checkbox" checked={hasVideo} onChange={(e) => setHasVideo(e.target.checked)} className="h-4 w-4 accent-[var(--brand)]" />
-            </label>
+
+            {/* listing-video upload placeholder */}
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-ink-faint">Listing video (canonical reference)</label>
+              {videoName ? (
+                <div className="flex items-center justify-between rounded-xl border border-green/40 bg-green-wash px-3 py-2.5 text-sm">
+                  <span className="font-medium text-green">🎥 {videoName} uploaded</span>
+                  <button onClick={() => setVideoName(null)} className="text-xs text-ink-faint hover:text-ink">
+                    remove
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setVideoName("listing_demo.mp4")}
+                  className="flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-line bg-[#fafafe] px-3 py-5 text-center transition hover:border-brand/50 hover:bg-brand-wash/30"
+                >
+                  <span className="text-2xl">📹</span>
+                  <span className="text-sm font-medium text-ink">Record / upload a 5–15s video</span>
+                  <span className="text-[11px] text-ink-faint">Shows the real product — your proof in a dispute</span>
+                </button>
+              )}
+            </div>
           </div>
           <div className="mt-5 border-t border-line pt-4">
             {gate ? (

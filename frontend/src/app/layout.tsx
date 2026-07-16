@@ -56,10 +56,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full`}>
       <body className="min-h-full flex flex-col">
         <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center gap-4 px-5 py-2.5">
-            <Logo />
+          <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5 sm:px-5">
+            <div className="shrink-0">
+              <Logo />
+            </div>
             {/* faux marketplace search */}
-            <div className="hidden flex-1 md:block">
+            <div className="hidden min-w-0 flex-1 md:block">
               <div className="mx-auto flex max-w-md items-center gap-2 rounded-lg border border-line bg-[#f7f7fb] px-3 py-2 text-sm text-ink-faint">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
                   <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
@@ -68,12 +70,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 Try “cotton kurti” or “running shoes”
               </div>
             </div>
-            <nav className="ml-auto flex items-center gap-0.5 text-sm">
+            <nav className="ml-auto flex min-w-0 items-center gap-0.5 overflow-x-auto text-sm [-ms-overflow-style:none] [scrollbar-width:none]">
               {NAV.map((n) => (
                 <Link
                   key={n.href}
                   href={n.href}
-                  className="rounded-md px-2.5 py-1.5 font-medium text-ink-soft transition hover:bg-brand-wash hover:text-brand-ink"
+                  className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 font-medium text-ink-soft transition hover:bg-brand-wash hover:text-brand-ink sm:px-2.5"
                 >
                   {n.label}
                 </Link>

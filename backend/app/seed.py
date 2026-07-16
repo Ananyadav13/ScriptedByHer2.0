@@ -107,7 +107,7 @@ def _seed(db):
                 fabric_claim=None, status="active"),
         # 2. Honest viral seller: legit product, sudden volume, but old real accounts
         Product(id="prod_viral_honest", seller_id="seller_viral",
-                title="Oversized Cotton T-Shirt (Viral)", brand="TrendyThreads", category="apparel",
+                title="Checked Cotton Casual Shirt (Viral)", brand="TrendyThreads", category="apparel",
                 price=499, mrp=999, images=["tshirt_real.jpg"],
                 fabric_claim="100% cotton", status="active"),
         # 3. Fabric mismatch: claims cotton, reviews say synthetic (hybrid media, Phase 3).
@@ -126,7 +126,7 @@ def _seed(db):
                 size_chart_json={"7": "UK7", "8": "UK8", "9": "UK9"}),
         # 5. Low-rated fraud cluster -> suspend (Phase 4 audit)
         Product(id="prod_lowrated_fraud", seller_id="seller_lowrated",
-                title="Wireless Earbuds Pro Max", brand="BargainBin", category="electronics",
+                title="Wireless Neckband Earphones", brand="BargainBin", category="electronics",
                 price=699, mrp=2999, images=["earbuds.jpg"],
                 fabric_claim=None, status="active"),
         # 6. Fixable gaps -> correction window (Phase 4 audit)
@@ -138,7 +138,7 @@ def _seed(db):
         # 6b. Delivery-fault: a GOOD seller's product ruined by a bad courier -> Agent-2
         #     audit routes to logistics referral, NO seller-rating penalty (fairness rule).
         Product(id="prod_damaged_courier", seller_id="seller_shoes",
-                title="Glass Water Bottle 1L", brand="StepUp", category="home",
+                title="Cold-Pressed Juice 1L (Glass Bottle)", brand="StepUp", category="home",
                 price=299, mrp=699, images=["bottle.jpg"], fabric_claim=None, status="active"),
         # 7. Loved knockoff: branded-style, far below MRP (counterfeit signal) BUT
         #    genuinely high trustworthy rating -> relabel_required, NOT a ban.
@@ -150,24 +150,21 @@ def _seed(db):
         Product(id="prod_normal_mug", seller_id="seller_viral",
                 title="Ceramic Coffee Mug 350ml", brand="TrendyThreads", category="home",
                 price=249, mrp=399, images=["mug.jpg"], fabric_claim=None, status="active"),
-        Product(id="prod_normal_notebook", seller_id="seller_shoes",
-                title="A5 Ruled Notebook 200 pages", brand="StepUp", category="stationery",
-                price=99, mrp=199, images=["notebook.jpg"], fabric_claim=None, status="active"),
         # --- depth catalog (varied sellers / ratings / issues) ---
         Product(id="prod_gadget_powerbank", seller_id="seller_gadgets",
-                title="20000mAh Fast-Charging Power Bank", brand="TechBazaar", category="electronics",
+                title="Wireless Charging Pad 15W", brand="TechBazaar", category="electronics",
                 price=1199, mrp=2499, images=["powerbank.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_gadget_earphones", seller_id="seller_gadgets",
-                title="Wireless Bluetooth Earphones (40h)", brand="TechBazaar", category="electronics",
+                title="Wireless Neckband Earphones (40h)", brand="TechBazaar", category="electronics",
                 price=899, mrp=1999, images=["earphones2.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_beauty_serum", seller_id="seller_beauty",
-                title="Vitamin C Face Serum 30ml", brand="GlowUp", category="beauty",
+                title="Men's Face Moisturizer 200ml", brand="GlowUp", category="beauty",
                 price=349, mrp=799, images=["serum.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_beauty_lipstick", seller_id="seller_beauty",
                 title="Matte Liquid Lipstick Set of 5", brand="GlowUp", category="beauty",
                 price=449, mrp=1199, images=["lipstick.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_kids_tshirt", seller_id="seller_kids",
-                title="Kids Cartoon Print T-Shirt (Cotton)", brand="LittleStars", category="apparel",
+                title="Kids Polka-Dot Cotton Dress", brand="LittleStars", category="apparel",
                 price=299, mrp=699, images=["kids.jpg"], fabric_claim="cotton", status="active",
                 size_chart_json=None),  # missing size chart -> Agent-2 flag
         Product(id="prod_saree_silk", seller_id="seller_saree",
