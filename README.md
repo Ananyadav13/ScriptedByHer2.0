@@ -9,7 +9,7 @@ The guiding principle, encoded throughout: **authenticity matters, but not at th
 
 Built for ScriptedBy{Her} 2.0 (Round 3).
 
-> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop run end to end. 82 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
+> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop run end to end. 89 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
 
 ---
 
@@ -67,6 +67,9 @@ Backend (`backend/.env`, documented in `backend/.env.example`):
 | `DATABASE_URL` | `sqlite:///./build_trust.db` | SQLAlchemy URL. |
 | `FRONTEND_ORIGIN` | `http://localhost:3000` | Comma-separated allowed CORS origins. |
 | `SEED_RESET` | `true` | `true` wipes and reseeds on boot; `false` preserves data. |
+| `LLM_MODEL` | `gemini-3-flash-preview` | Gemini model used by both agents. |
+| `LOG_LEVEL` | `INFO` | Root log level. |
+| `LOG_DIR` | `logs` | Directory for the rotating `app.log` (5 MB × 3 backups), alongside console output. Set empty for console-only. |
 
 Frontend (`frontend/.env.local`):
 
@@ -86,7 +89,19 @@ One command brings up both services:
 GEMINI_API_KEY=your-key docker compose up --build
 ```
 
-Then open **http://localhost:3000**. The SQLite database and logs live on a named volume, so data survives restarts (`SEED_RESET=false` in compose).
+Then open **http://localhost:3000**. The SQLite database lives on a named volume so data survives restarts (`SEED_RESET=false` in compose), and application logs are written to `./backend/logs/app.log` on the host.
+
+To use a **pool** of Gemini keys instead of one (each key a separate Google project, for daily-quota failover):
+
+```bash
+GEMINI_API_KEYS=key1,key2,key3 docker compose up --build
+```
+
+> **One worker, deliberately.** Live investigation traces stream over SSE from in-memory
+> per-investigation queues. With more than one worker, the request that subscribes to a
+> trace can land in a different process than the one publishing it and the stream stays
+> empty. Scaling out means moving those queues to a shared broker (e.g. Redis pub/sub)
+> first — see [Limitations](#limitations).
 
 ---
 
@@ -202,6 +217,28 @@ So pixels are never compared across variants. Instead:
 
 A vision model therefore cannot produce a colour false-flag even if it insists the colour differs. It is also cheaper: a dispute sends the buyer's frames plus a short text fingerprint, never the listing video again.
 
+#### Media pipeline: what runs live, and what is pre-extracted
+
+Being precise about this, because the distinction matters:
+
+| Stage | In the shipped demo | Implementation |
+| --- | --- | --- |
+| Keyframe extraction from a listing video | **Not exercised** — no video ships with this repo | `vision.extract_keyframes` (OpenCV: video, stills folder, or single image) |
+| Listing → golden fields | **Pre-extracted** into `seed.py` | `vision.extract_quality_fingerprint` — one multimodal call, cached on the product |
+| Buyer evidence → golden fields | **Pre-extracted** into `seed.py` | `vision._read_frames` — one multimodal call |
+| The mismatch verdict | **Runs live, every time** | `services/quality_fingerprint.compare_fingerprints` — pure Python, no LLM |
+
+The reasoning: video files are large and the free Gemini tier is daily-capped, so seeding
+the two attribute reads makes the demo byte-identical on every run and costs zero quota.
+**The part that actually decides anything — the deterministic diff — is not seeded and
+runs for real.**
+
+To exercise the extraction path end to end, drop a clip at
+`backend/media/videos/kurti_listing_black.mp4`, clear that product's
+`quality_fingerprint_json`, and re-run: `check_media_evidence` re-extracts from the video
+and caches the result. The code path is complete and unit-tested; only the media asset is
+absent from the repository.
+
 ### Agent 2 — catalog integrity
 
 One **batched** structured call clusters distinct negative-review complaints into fixed labels (`fabric_mismatch`, `size_issue`, `damaged_delivery`, `possible_fraud`, `other`), then a second drafts the corrected field. Both degrade gracefully: if the LLM is unavailable the audit still completes on the deterministic tier rules, and fixes fall back to a deterministic draft.
@@ -265,8 +302,9 @@ Agent 1 always picks the **least drastic correct action**:
 │   │   ├── schemas.py         # Pydantic DTOs + the Verdict schema
 │   │   ├── seed.py            # demo catalog + golden-path scenarios
 │   │   ├── time_utils.py      # single source of UTC "now"
+│   │   ├── logging_config.py  # console + rotating file logs, moderation events
 │   │   └── main.py            # app factory, CORS, lifespan
-│   ├── tests/                 # 82 tests
+│   ├── tests/                 # 89 tests
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
@@ -292,15 +330,16 @@ Agent 1 always picks the **least drastic correct action**:
 ```bash
 cd backend
 .venv\Scripts\activate          # source .venv/bin/activate on macOS/Linux
-pytest                          # 82 tests
+pytest                          # 89 tests
 pytest -v                       # per-test names
 pytest tests/test_api_smoke.py  # API layer only
 ```
 
-Two layers:
+Three layers:
 
-- **Unit tests (66)** cover every deterministic decision rule — risk checks, delisting tiers, tripwires, the mandatory-field gate, fit prediction, and the quality-fingerprint diff. They use lightweight object stand-ins, so they run in seconds with no database and no API key.
+- **Unit tests (66)** cover every deterministic decision rule — risk checks (13), delisting tiers (14), the quality-fingerprint diff (13), the mandatory-field gate (12), fit prediction (9), tripwires (5). They use lightweight object stand-ins, so they run in seconds with no database and no API key.
 - **API smoke tests (16)** drive the real app through FastAPI's `TestClient`: health, catalog browsing, the seller listing gate, the manager queue and decisions (including the cross-manager 403), buyer dispute intake, dispute resolution, notifications, and both agent surfaces.
+- **Drift tests (7)** enforce that `rules.py` really is the source of truth: every constant is consumed by real code, and no threshold is hardcoded in the prompts — the agent's instructions and the deterministic engine cannot silently diverge.
 
 The tests run **fully offline**. Every LLM entry point is stubbed, and `tests/conftest.py` redirects `DATABASE_URL` to a dedicated `test_build_trust.db` before the app is imported — so running the suite never touches your working database.
 
@@ -333,6 +372,9 @@ Honest scope notes for reviewers:
 
 - **No authentication.** Role switching (buyer / seller / manager) is a UI affordance, not a security boundary, and every endpoint is open. Building real auth was out of scope for the hackathon; rather than ship a convincing-looking fake, there is deliberately no login or API-key UI anywhere in the app.
 - **SQLite with threaded background workers.** Fine for a demo; a real deployment needs Postgres.
+- **Single-process only.** SSE trace events are held in in-memory queues (`app/agents/events.py`), so the API must run with one worker. Horizontal scaling requires a shared broker for those events first.
+- **No rate limiting.** `/investigate` and `/dispute` each start a background LLM loop and are unauthenticated — fine behind a demo URL, not on the open internet.
+- **Media pipeline is seeded, not live.** The listing/buyer attribute reads are pre-extracted into `seed.py` for a deterministic, zero-quota demo; no video ships with the repo. The deterministic diff that produces the verdict does run live. See [Media pipeline](#media-pipeline-what-runs-live-and-what-is-pre-extracted).
 - **Media evidence is advisory by design.** Lighting, wear, and angle make it uncertain, so it never auto-punishes — it routes to a human.
 - **Seeded demo data.** Reviews and orders are synthetic, generated to exercise each decision path.
 - **Gemini free tier.** Daily quota is limited, hence the API-key pool with rotation. Every deterministic surface works without a key.

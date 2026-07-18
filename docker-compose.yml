@@ -2,8 +2,13 @@
 #
 #   GEMINI_API_KEY=your-key docker compose up --build
 #
+# Or with a key POOL (each key a separate Google project, for daily-quota failover):
+#
+#   GEMINI_API_KEYS=key1,key2,key3 docker compose up --build
+#
 # Then open http://localhost:3000. Data persists on a named volume, so the SQLite
-# database, logs and moderation history survive a restart.
+# database and moderation history survive a restart; logs are written to ./backend/logs
+# on the host.
 
 services:
   backend:
@@ -15,9 +20,15 @@ services:
       DATABASE_URL: "sqlite:////data/build_trust.db"
       # do NOT wipe on boot — keep data across restarts
       SEED_RESET: "false"
+      # Single key, and the optional comma-separated POOL. The pool takes precedence
+      # when set (see config.gemini_key_list); passing both is safe.
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      GEMINI_API_KEYS: "${GEMINI_API_KEYS:-}"
       # the origin the browser loads the UI from (never a wildcard alongside credentials)
       FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:3000}"
+      # writes app.log into the bind-mounted logs dir below (rotating, 5MB x 3)
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      LOG_DIR: "/app/logs"
     volumes:
       - db_data:/data            # SQLite database file — survives restarts
       - ./backend/logs:/app/logs # application logs / history on the host

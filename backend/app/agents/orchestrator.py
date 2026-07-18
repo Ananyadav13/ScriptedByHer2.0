@@ -8,12 +8,14 @@ doesn't just flag.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 
 from google.genai import types
 
 from ..config import settings
 from ..db import SessionLocal
+from ..logging_config import log_moderation_event
 from ..models import CatalogAction, Hub, Investigation, Notification, Order, Product
 from ..schemas import Verdict
 from ..services import risk_checks, rules
@@ -21,6 +23,8 @@ from ..time_utils import utcnow
 from . import agent1_tools, events
 from .gemini_client import generate_with_retry
 from .prompts import AGENT1_SYSTEM_PROMPT, VERDICT_INSTRUCTION
+
+log = logging.getLogger(__name__)
 
 MAX_TOOL_STEPS = 8
 
@@ -100,6 +104,9 @@ def run_investigation(investigation_id: str, product_id: str | None,
         db.commit()
         events.publish(investigation_id, {"type": "verdict", **verdict.model_dump()})
     except Exception as exc:  # noqa: BLE001 — surface any failure to the trace
+        # exc_info: a failed investigation is the one place the traceback is worth keeping,
+        # since the SSE trace only ever carries the stringified message.
+        log.error("investigation %s failed: %s", investigation_id, exc, exc_info=True)
         db.rollback()
         inv = db.get(Investigation, investigation_id)
         if inv:
@@ -144,6 +151,10 @@ def _manager_of(product: Product | None) -> str | None:
 
 
 def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
+    log_moderation_event(
+        "agent1", action, product_id,
+        decision=verdict.decision, confidence=round(verdict.confidence, 2),
+    )
     evidence = {"decision": verdict.decision, "evidence": verdict.evidence,
                 "confidence": verdict.confidence}
     # advisory recommendations carry the manager-facing next step + remedy

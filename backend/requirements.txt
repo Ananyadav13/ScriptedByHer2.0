@@ -1,14 +1,19 @@
+# Direct dependencies — each of these is imported by app/ or tests/.
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 sqlalchemy==2.0.36
-pydantic==2.10.4
+# >=2.12.5 required by google-genai 2.11.0; 2.13.4 is the version this project is
+# developed and tested against. Pinning 2.10.4 here made requirements.txt uninstallable
+# from clean (and so broke `docker compose build`) while the dev venv carried 2.13.x.
+pydantic==2.13.4
 pydantic-settings==2.7.1
 google-genai==2.11.0
 python-dotenv==1.0.1
-faker==33.1.0
-pillow==11.1.0
-imagehash==4.3.1
-numpy==2.2.1
 opencv-python-headless==4.11.0.86
-httpx==0.28.1
 pytest==8.3.4
+
+# Transitive, pinned for reproducible builds (not imported directly by this project):
+#   numpy <- opencv-python-headless
+#   httpx <- google-genai, and starlette's TestClient in the suite
+numpy==2.2.1
+httpx==0.28.1

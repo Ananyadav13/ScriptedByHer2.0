@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { API, type MediaEvidence } from "@/lib/api";
+import { type MediaEvidence } from "@/lib/api";
 import { productImage } from "@/lib/productImages";
 
 // A frame image with a graceful fallback: real dispute stills live in /public/evidence/;
@@ -119,6 +119,3 @@ export function MediaEvidenceCard({ ev, fallbackImg }: { ev: MediaEvidence; fall
     </div>
   );
 }
-
-// exported so callers can reference the API base if they build absolute URLs later
-export { API };

@@ -80,7 +80,7 @@ const STEPS: Record<Journey, Step[]> = {
       hat: "🔎",
       title: "Agent 2 audits every listing",
       narrative:
-        "Agent 2 checks mandatory fields, distils the listing video into a variant-invariant quality fingerprint, and clusters buyer complaints — deterministically, so it runs with zero LLM quota.",
+        "Agent 2 checks mandatory fields, compares each listing against its variant-invariant quality fingerprint, and clusters buyer complaints. The fingerprint comparison is pure deterministic code, so it runs identically every time and needs zero LLM quota.",
     },
     {
       railActive: 2,

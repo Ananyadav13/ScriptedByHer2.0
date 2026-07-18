@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # gemini-3-flash-preview is the verified working model for this project.
     llm_model: str = "gemini-3-flash-preview"
 
+    # Logging. `log_dir` is where the rotating application log is written; compose mounts
+    # it to the host. Set LOG_DIR="" to disable file logging and keep console output only
+    # (useful on a PaaS that collects stdout and gives you no writable disk).
+    log_level: str = "INFO"
+    log_dir: str = "logs"
+
     @property
     def cors_origins(self) -> list[str]:
         """Allowed browser origins. `*` is returned as a single wildcard entry —

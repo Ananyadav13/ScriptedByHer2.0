@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..logging_config import log_moderation_event
 from ..models import Buyer, CatalogAction, Manager, Notification, Order, Product, Seller
 from ..services import delisting
 from ..time_utils import utcnow
@@ -266,6 +267,10 @@ def manager_decide(manager_id: str, product_id: str, body: ManagerDecision,
                 notified_buyers += 1
 
     db.commit()
+    log_moderation_event(
+        manager_id, f"manager_{body.decision}", product.id,
+        from_status=prior, to_status=product.status, buyers_notified=notified_buyers,
+    )
     return {"product_id": product.id, "new_status": product.status, "decision": body.decision,
             "buyers_notified": notified_buyers}
 
@@ -318,4 +323,8 @@ def manager_decide_dispute(manager_id: str, order_id: str, body: DisputeDecision
                         recipient_id=order.buyer_id, subject=subject, body=buyer_msg,
                         priority="high", related_id=order.id, created_at=now))
     db.commit()
+    log_moderation_event(
+        manager_id, f"manager_dispute_{body.decision}", order.id,
+        product=order.product_id, buyer=order.buyer_id, to_status=order.status,
+    )
     return {"order_id": order.id, "new_status": order.status, "decision": body.decision}

@@ -3,7 +3,7 @@
 The declarations are schema-only (what the model sees). Actual execution happens
 in `dispatch`, which loads ORM objects and calls the deterministic services in
 `app.services.risk_checks`. Kept separate so the orchestrator can log/stream each
-call. The three risk tools touch NO LLM; the 4th (`check_video_reviews`) is a
+call. The three risk tools touch NO LLM; the 4th (`check_media_evidence`) is a
 multimodal sub-call and is imported lazily inside `dispatch` so this module's
 deterministic tools stay LLM-free at import time.
 """
