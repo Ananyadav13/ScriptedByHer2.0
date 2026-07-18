@@ -1,4 +1,4 @@
-"""Agent 1 orchestration — the investigation loop (Phase 2).
+"""Agent 1 orchestration — the investigation loop.
 
 Gemini pivot (14 Jul 2026): a MANUAL function-calling loop over `google-genai`
 (not automatic function calling) so every tool call streams to the SSE trace as
@@ -9,7 +9,6 @@ doesn't just flag.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from google.genai import types
 
@@ -18,6 +17,7 @@ from ..db import SessionLocal
 from ..models import CatalogAction, Hub, Investigation, Notification, Order, Product
 from ..schemas import Verdict
 from ..services import risk_checks, rules
+from ..time_utils import utcnow
 from . import agent1_tools, events
 from .gemini_client import generate_with_retry
 from .prompts import AGENT1_SYSTEM_PROMPT, VERDICT_INSTRUCTION
@@ -54,6 +54,14 @@ def run_investigation(investigation_id: str, product_id: str | None,
         events.publish(investigation_id, {"type": "status", "status": "running"})
 
         product = db.get(Product, product_id) if product_id else None
+        # A dispute is keyed on an ORDER with no product_id — resolve the product from the
+        # order so the agent knows the REAL listing (otherwise it invents product ids from
+        # the order id, e.g. "prod_fabric_dispute_..."). This also gives _execute_action the
+        # right product to act on (flag/hold/etc.).
+        if product is None and order_id:
+            o = db.get(Order, order_id)
+            if o is not None and o.product_id:
+                product = db.get(Product, o.product_id)
         config = types.GenerateContentConfig(
             system_instruction=AGENT1_SYSTEM_PROMPT,
             tools=[agent1_tools.TOOL],
@@ -120,12 +128,19 @@ def _final_verdict(contents: list) -> Verdict:
 
 
 def _notify(db, audience: str, subject: str, body: str,
-            priority: str = "normal", related_id: str | None = None) -> None:
+            priority: str = "normal", related_id: str | None = None,
+            recipient_id: str | None = None) -> None:
     db.add(Notification(
         id=f"ntf_{uuid.uuid4().hex[:12]}",
-        audience=audience, subject=subject, body=body,
-        priority=priority, related_id=related_id, created_at=datetime.utcnow(),
+        audience=audience, recipient_id=recipient_id, subject=subject, body=body,
+        priority=priority, related_id=related_id, created_at=utcnow(),
     ))
+
+
+def _manager_of(product: Product | None) -> str | None:
+    """The business manager who owns this product's seller (for routing to their inbox)."""
+    seller = getattr(product, "seller", None) if product else None
+    return getattr(seller, "manager_id", None) if seller else None
 
 
 def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
@@ -141,14 +156,14 @@ def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
         product_id=product_id,
         action=action,
         evidence_json=evidence,
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     ))
 
 
 def _request_qc(db, product: Product, verdict: Verdict, buyer_msg: str) -> None:
     """Reversible ask: request a seller quality-check video and start the SLA clock."""
     product.status = "needs_info"
-    product.qc_requested_at = datetime.utcnow()
+    product.qc_requested_at = utcnow()
     product.qc_responded = False
     _log_action(db, product.id, "request_qc_video", verdict)
     _notify(db, "seller", f"Quality-check video requested (respond within {rules.SELLER_QC_SLA_DAYS} days)",

@@ -33,7 +33,10 @@ export const STATUS_META: Record<string, Meta> = {
   flagged: { label: "Under manager review", tone: "teal" },
 };
 
+// Every `action` string the backend writes to catalog_actions, so the activity feeds
+// never fall back to a raw snake_case enum.
 export const ACTION_META: Record<string, Meta> = {
+  // --- agent actions ---
   suspend: { label: "Suspend", tone: "rose" },
   correction: { label: "Correction window", tone: "amber" },
   logistics_referral: { label: "Logistics referral", tone: "teal" },
@@ -41,11 +44,23 @@ export const ACTION_META: Record<string, Meta> = {
   fix_applied: { label: "Fix applied", tone: "green" },
   lock: { label: "Lock", tone: "rose" },
   ban: { label: "Ban", tone: "rose" },
+  hold: { label: "Held for info", tone: "amber" },
+  notify: { label: "Seller notified", tone: "amber" },
+  request_qc_video: { label: "QC video requested", tone: "amber" },
+  relabel_request: { label: "Relabel requested", tone: "amber" },
   reverify: { label: "Reverified", tone: "green" },
   recommend_review: { label: "Recommend review", tone: "teal" },
+  // --- human manager decisions ---
+  manager_approve: { label: "Manager: approved", tone: "green" },
   manager_unlock: { label: "Manager: unlocked", tone: "green" },
+  manager_suspend: { label: "Manager: suspended", tone: "rose" },
+  manager_suspend_and_request_changes: { label: "Manager: suspended · changes required", tone: "rose" },
+  manager_request_changes: { label: "Manager: changes requested", tone: "amber" },
+  manager_modify_listing: { label: "Manager: sizing update requested", tone: "amber" },
   manager_confirm_lock: { label: "Manager: confirmed", tone: "rose" },
   manager_delete: { label: "Manager: deleted", tone: "rose" },
+  manager_dispute_approve: { label: "Manager: refund approved", tone: "green" },
+  manager_dispute_reject: { label: "Manager: claim rejected", tone: "rose" },
 };
 
 // decisions that must BLOCK a purchase (the listing is unsafe to buy right now)

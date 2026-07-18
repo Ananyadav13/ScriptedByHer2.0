@@ -41,7 +41,7 @@ REPEAT_CASE_COUNT = 3
 REPEAT_CASE_WINDOW_DAYS = 30
 
 # ---------------------------------------------------------------------------
-# 5. Delivery / dispute (OTP corroboration — see PLAN.md OTP section)
+# 5. Delivery / dispute (OTP corroboration)
 # ---------------------------------------------------------------------------
 REFUND_MIN_SIGNALS = 2           # independent corroborating signals for a fast-track refund
 SERIAL_CLAIM_COUNT = 5           # buyer claim_history count >= this => serial claimer -> manual review
@@ -56,7 +56,7 @@ MANUAL_REVIEW_WEIGHT = 1.5       # multiplier for human-written reviews
 MEDIA_REVIEW_WEIGHT = 1.0        # image/video-derived review signal
 
 # ---------------------------------------------------------------------------
-# 7. Agent 2 delisting tiers (Phase 4). "The product no longer works for buyers."
+# 7. Agent 2 delisting tiers. "The product no longer works for buyers."
 #    Evaluated on RECENT reviews. Each tier: (rating_below, min_review_count).
 #    Trips => remove from catalogue, drop seller rating, notify seller (with logs).
 # ---------------------------------------------------------------------------
@@ -79,7 +79,7 @@ SELLER_PENALTY_MAX = 0.5             # worst-case hit, only for a seller who is 
 
 # ---------------------------------------------------------------------------
 # 9. Real-time behavioural factors (make decisions feel live, not one-shot).
-#    Consumed by Agent 1 tripwires (Phase 4 wiring) and the dispute flow (Phase 3).
+#    Consumed by Agent 1 tripwires and the dispute flow.
 # ---------------------------------------------------------------------------
 SELLER_COUNTERFEIT_RATING = 2.5      # seller rating <= this + price flag => strong counterfeit lean
 PEAK_FAKE_WINDOW_DAYS = 3            # window around a product's rating-peak day to inspect
@@ -88,12 +88,12 @@ RATING_TREND_WINDOW_DAYS = 30        # compare last-30d vs prior-30d trustworthy
 RATING_DROP_ALERT = 0.5             # a drop >= this across windows => deteriorating product (tripwire)
 RETURN_RATE_ALERT = 0.30            # > 30% recent returns/RTO => quality problem
 DISPUTE_RATE_ALERT = 0.10           # > 10% of recent orders disputed => investigate
-PHOTO_MISMATCH_SHARE = 0.40         # > 40% of review photos contradict the listing (vision, Phase 3)
+PHOTO_MISMATCH_SHARE = 0.40         # > 40% of review photos contradict the listing (vision)
 SELLER_QC_SLA_DAYS = 7              # seller quality-check response deadline before we act
 MIN_ORDERS_FOR_ACTION = 20          # confidence floor: need >= this many orders before a hard lock/ban
 
 # ---------------------------------------------------------------------------
-# 10. Agent 2 — review clustering + catalog integrity (Phase 4).
+# 10. Agent 2 — review clustering + catalog integrity.
 #     We act on AGREEMENT (how consistently buyers report the same problem), not
 #     raw complaint count — one loud review is noise; a shared complaint is signal.
 # ---------------------------------------------------------------------------
@@ -104,8 +104,51 @@ MAX_CLUSTER_TEXTS = 60             # cap distinct complaint phrasings sent to th
 FIXABLE_CLUSTERS = ("fabric_mismatch", "size_issue")
 
 # ---------------------------------------------------------------------------
-# 11. Mandatory listing fields (Phase 4 gate + Phase 5 new-listing flow).
+# 11. Mandatory listing fields (catalog gate + new-listing flow).
 #     A listing (or a new one) is blocked/held until these are present. The
 #     listing VIDEO is mandatory too (it is the canonical media reference — §8).
 # ---------------------------------------------------------------------------
 MANDATORY_FIELDS = ("size_chart_json", "fabric_claim", "listing_video_path")
+
+# ---------------------------------------------------------------------------
+# 12. QUALITY FINGERPRINT — the "golden fields" (variant-invariant attributes).
+#
+#     A seller films ONE listing video, but sells the same garment in several
+#     colourways. Comparing a buyer's dispute video of the BLUE kurti against a
+#     listing video of the BLACK one makes colour the loudest "discrepancy" and
+#     false-flags an honest seller. The product is the same; only the shade differs.
+#
+#     So we never compare pixels across variants. The listing video is distilled ONCE
+#     into the attributes every colourway physically shares — weave, sheen, texture,
+#     opacity, stitch density, drape — and a dispute is judged against THOSE.
+#
+#     `QUALITY_INVARIANT_ATTRS` is the single source of truth for what may be compared.
+#     `VARIANT_SPECIFIC_ATTRS` can differ between variants for entirely innocent reasons
+#     and are NEVER counted as evidence of a mismatch — the deterministic diff in
+#     services/quality_fingerprint.py drops them regardless of what the model reports,
+#     so a vision model cannot cause a colour false-flag even if it tries.
+#
+#     Exception: a buyer whose actual complaint IS "wrong colour sent" must be heard —
+#     colour is compared only when the dispute explicitly claims it (see
+#     COLOUR_SENSITIVE_CLAIMS), and even then it is reported separately.
+# ---------------------------------------------------------------------------
+QUALITY_INVARIANT_ATTRS = (
+    "weave_structure",    # knit vs woven; tight vs loose  — a fabric's build
+    "surface_sheen",      # matte / semi-matte / glossy    — the cotton-vs-polyester tell
+    "fibre_texture",      # fibrous / smooth / plasticky
+    "opacity",            # opaque / semi-sheer / sheer
+    "stitch_quality",     # seam + hem density and finish
+    "drape",              # stiff / structured / fluid
+    "embellishment_type", # print / embroidery / sequins / none  (TYPE, not colour)
+)
+VARIANT_SPECIFIC_ATTRS = ("colour", "shade", "print_colourway")
+
+# A dispute must name one of these for colour to be compared at all.
+COLOUR_SENSITIVE_CLAIMS = ("wrong_colour", "wrong_item", "colour_mismatch")
+
+# Share of COMPARED invariant attributes that must diverge before the media read counts
+# as a material mismatch. 2 of 7 golden fields disagreeing is noise (lighting, wear);
+# a genuine fabric swap moves sheen + texture + weave together.
+QUALITY_DIVERGENCE_SHARE = 0.40
+# Below this many readable invariant attributes the comparison is too thin to mean anything.
+MIN_COMPARABLE_ATTRS = 3

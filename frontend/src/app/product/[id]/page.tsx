@@ -1,19 +1,11 @@
 import Link from "next/link";
 import { api, type ProductDetail } from "@/lib/api";
-import { DEMO_ORDERS } from "@/lib/orders";
 import { ProductView } from "@/components/ProductView";
 
 export const dynamic = "force-dynamic";
 
-export default async function ProductPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ order?: string }>;
-}) {
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { order: focusOrder } = await searchParams;
 
   let p: ProductDetail;
   try {
@@ -29,5 +21,5 @@ export default async function ProductPage({
     );
   }
 
-  return <ProductView detail={p} orders={DEMO_ORDERS[id] ?? []} focusOrder={focusOrder} />;
+  return <ProductView detail={p} />;
 }

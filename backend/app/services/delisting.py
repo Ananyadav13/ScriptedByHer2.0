@@ -1,4 +1,4 @@
-"""Agent 2 delisting engine — a PURE deterministic rules engine, NO LLM (Phase 4, task 4).
+"""Agent 2 delisting engine — a PURE deterministic rules engine, NO LLM.
 
 Decides whether a product should leave the catalogue and HOW, using:
   - `rules.DELIST_TIERS` on the trustworthy rating + genuine-review volume, and
@@ -36,7 +36,8 @@ _KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("damaged_delivery", ("broken", "damage", "shattered", "crushed", "in transit", "courier",
                           "mishandled", "wrong item", "torn", "destroyed", "cracked")),
     ("fabric_mismatch", ("fabric", "cotton", "polyester", "synthetic", "material", "shrank",
-                         "shrunk", "faded", "cheap material", "not breathable")),
+                         "shrunk", "faded", "cheap material", "not breathable", "rayon", "crepe",
+                         "transparent", "see-through", "see through", "sheer", "thin cloth")),
     ("size_issue", ("size", "fit ", "fits", "runs small", "runs large", "too small", "too large",
                     "size chart", "tight", "loose", "measurement")),
 ]

@@ -1,4 +1,4 @@
-"""Ops/support surface: notification inbox + hub health (feeds the admin UI in Phase 5)."""
+"""Ops/support surface: notification inbox + hub health (feeds the admin UI)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends

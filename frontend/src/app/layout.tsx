@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
+import { Nav } from "@/components/Nav";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -11,15 +12,6 @@ export const metadata: Metadata = {
   description:
     "A Meesho hackathon prototype: two agentic AI systems that protect buyers and sellers — counterfeit defense, fair disputes, catalog integrity, and seller onboarding.",
 };
-
-const NAV = [
-  { href: "/", label: "Shop" },
-  { href: "/cart", label: "Cart" },
-  { href: "/seller", label: "Sell" },
-  { href: "/agent1", label: "Agent 1" },
-  { href: "/admin", label: "Agent 2" },
-  { href: "/manager", label: "Manager" },
-];
 
 function Logo() {
   return (
@@ -70,17 +62,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 Try “cotton kurti” or “running shoes”
               </div>
             </div>
-            <nav className="ml-auto flex min-w-0 items-center gap-0.5 overflow-x-auto text-sm [-ms-overflow-style:none] [scrollbar-width:none]">
-              {NAV.map((n) => (
-                <Link
-                  key={n.href}
-                  href={n.href}
-                  className="shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 font-medium text-ink-soft transition hover:bg-brand-wash hover:text-brand-ink sm:px-2.5"
-                >
-                  {n.label}
-                </Link>
-              ))}
-            </nav>
+            <Nav />
           </div>
         </header>
         <div className="flex-1">{children}</div>

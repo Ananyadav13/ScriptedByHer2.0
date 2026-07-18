@@ -1,7 +1,7 @@
-"""Agent 2 — Listing & Catalog Integrity (Phase 4).
+"""Agent 2 — Listing & Catalog Integrity.
 
 Two LLM touchpoints, both ONE batched structured call (Gemini `response_schema` ->
-`response.parsed`, per PLAN §5 / the Phase 1.5 pivot):
+`response.parsed`):
 
   1. `cluster_reviews(product_id)` — groups a product's negative reviews into labelled
      complaint clusters with an AGREEMENT score (share of negative reviews that agree).
@@ -18,9 +18,9 @@ returns an empty cluster list so `/audit` still completes deterministically.
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from collections import Counter
-from datetime import datetime
 
 from google.genai import types
 from pydantic import BaseModel
@@ -33,8 +33,11 @@ from ..services.rules import (
     MAX_CLUSTER_TEXTS,
     NEGATIVE_REVIEW_MAX_RATING,
 )
+from ..time_utils import utcnow
 from .gemini_client import generate_with_retry
 from .prompts import AGENT2_CLUSTER_INSTRUCTION, AGENT2_FIX_INSTRUCTION
+
+log = logging.getLogger(__name__)
 
 _LABELS = {"fabric_mismatch", "size_issue", "damaged_delivery", "possible_fraud", "other"}
 
@@ -145,7 +148,7 @@ def cluster_reviews(product_id: str, db) -> dict:
         )
         parsed: ClusterResult = resp.parsed
     except Exception as exc:  # noqa: BLE001 — never let clustering break the audit
-        print(f"[agent2] cluster_reviews {product_id} failed: {exc}")
+        log.warning("cluster_reviews %s failed: %s", product_id, exc)
         return {"product_id": product_id, "negative_count": total, "clusters": [],
                 "dominant": None, "actionable": False, "error": str(exc)}
 
@@ -224,7 +227,7 @@ def draft_fix(product: Product, cluster: dict, db, drift_note: str = "") -> Cata
         )
         draft: FixDraft = resp.parsed
     except Exception as exc:  # noqa: BLE001 — fall back to a deterministic draft, don't drop it
-        print(f"[agent2] draft_fix {product.id} LLM failed ({exc}); using deterministic fallback")
+        log.warning("draft_fix %s LLM failed (%s); using deterministic fallback", product.id, exc)
         draft = _fallback_draft(product, label, drift_note)
 
     after = dict(before)
@@ -248,7 +251,7 @@ def draft_fix(product: Product, cluster: dict, db, drift_note: str = "") -> Cata
             "rationale": draft.rationale,
         },
         seller_approved=False,
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     )
     db.add(action)
     return action

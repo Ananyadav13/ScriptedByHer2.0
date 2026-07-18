@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Product } from "@/lib/api";
 import { payLater, ratingTone } from "@/lib/catalog";
-import { PRODUCT_IMAGES } from "@/lib/productImages";
+import { productImage } from "@/lib/productImages";
 
 function money(n: number) {
   return "₹" + Math.round(n).toLocaleString("en-IN");
@@ -23,7 +23,7 @@ export function ProductCard({ p, sponsored }: { p: Product; sponsored?: boolean 
         <div className="relative aspect-[3/4] overflow-hidden bg-[#f2f2f7]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={(PRODUCT_IMAGES[p.id] ?? [`/products/${p.id}.jpg`])[0]}
+            src={productImage(p.id)}
             alt={p.title}
             className="h-full w-full bg-white object-contain transition group-hover:scale-[1.03]"
             loading="lazy"

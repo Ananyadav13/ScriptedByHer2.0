@@ -1,12 +1,12 @@
-"""Agent 2 surface — Listing & Catalog Integrity (Phase 4).
+"""Agent 2 surface — Listing & Catalog Integrity.
 
-Endpoints the frontend (Phase 5) consumes:
+Endpoints the frontend consumes:
   GET  /fit                              — deterministic size prediction (proves NO LLM on this path)
   POST /audit                            — sweep catalogue -> delisting engine (+ clustering on a trip)
   GET  /admin/actions                    — the catalog-action queue (tier badges, reasons)
   GET  /seller/{id}/drafts               — pending fix drafts (before/after) for a seller
   POST /catalog_actions/{id}/approve     — seller approves a draft -> applies it to the product
-  POST /listing/check                    — mandatory-fields gate for a NEW listing (Phase 5 flow)
+  POST /listing/check                    — mandatory-fields gate for a NEW listing
   POST /tripwires/scan                   — deterministic watchers -> FIRE Agent-1 investigations
 
 The delisting/tripwire/fit logic is deterministic (services/); clustering + fix drafting are the
@@ -14,8 +14,8 @@ LLM half (agents/agent2.py) and degrade gracefully so the audit always completes
 """
 from __future__ import annotations
 
+import logging
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -26,6 +26,9 @@ from ..agents.orchestrator import run_investigation
 from ..db import get_db
 from ..models import CatalogAction, Investigation, Manager, Notification, Product, SizeDrift
 from ..services import delisting, fit_prediction, mandatory_fields, tripwires
+from ..time_utils import utcnow
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["catalog"])
 
@@ -34,14 +37,14 @@ def _notify(db: Session, audience: str, subject: str, body: str,
             priority: str = "normal", related_id: str | None = None) -> None:
     db.add(Notification(
         id=f"ntf_{uuid.uuid4().hex[:12]}", audience=audience, subject=subject,
-        body=body, priority=priority, related_id=related_id, created_at=datetime.utcnow(),
+        body=body, priority=priority, related_id=related_id, created_at=utcnow(),
     ))
 
 
 def _log(db: Session, product_id: str, action: str, evidence: dict) -> CatalogAction:
     row = CatalogAction(
         id=f"act_{uuid.uuid4().hex[:12]}", product_id=product_id, action=action,
-        evidence_json=evidence, seller_approved=False, created_at=datetime.utcnow(),
+        evidence_json=evidence, seller_approved=False, created_at=utcnow(),
     )
     db.add(row)
     return row
@@ -60,8 +63,8 @@ def fit(buyer_id: str, product_id: str, db: Session = Depends(get_db)):
     result = fit_prediction.predict_size(buyer_id, product_id, db)
     if "error" in result:
         raise HTTPException(404, result["error"])
-    print(f"[fit] {buyer_id} x {product_id}: {result['original']} -> {result['adjusted']} "
-          f"(NO LLM — pure join)")
+    log.info("fit %s x %s: %s -> %s (no LLM — pure join)",
+             buyer_id, product_id, result["original"], result["adjusted"])
     return result
 
 
@@ -307,10 +310,13 @@ def approve_draft(action_id: str, db: Session = Depends(get_db)):
 
 
 # ---------------------------------------------------------------------------
-# POST /listing/check — mandatory-fields gate for a NEW listing (Phase 5)
+# POST /listing/check — mandatory-fields gate for a NEW listing
 # ---------------------------------------------------------------------------
 class NewListingIn(BaseModel):
     category: str
+    title: str | None = None
+    description: str | None = None
+    color: str | None = None
     size_chart_json: dict | None = None
     fabric_claim: str | None = None
     listing_video_path: str | None = None
@@ -340,7 +346,7 @@ def tripwire_scan(body: TripwireScanIn | None, background: BackgroundTasks,
         inv_id = f"inv_{uuid.uuid4().hex[:12]}"
         db.add(Investigation(
             id=inv_id, product_id=t["product_id"], order_id=None, trigger="tripwire",
-            status="queued", tool_calls_log_json=[], created_at=datetime.utcnow(),
+            status="queued", tool_calls_log_json=[], created_at=utcnow(),
         ))
         db.commit()
         events.create(inv_id)

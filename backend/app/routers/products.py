@@ -1,8 +1,7 @@
-"""Product catalog API + listing-lock consequences (Phase 3)."""
+"""Product catalog API + listing-lock consequences."""
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -10,13 +9,14 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models import CatalogAction, Product
 from ..schemas import ProductDetail, ProductOut
+from ..time_utils import utcnow
 
 router = APIRouter(prefix="/products", tags=["products"])
 
 # statuses where a buyer/seller should see WHY the listing is restricted.
 # NOTE: `flagged` is deliberately NOT here — it's an advisory manager recommendation,
-# the sale continues with no buyer-facing restriction (PLAN.md §5B).
-# `correction_window` (Phase 4 audit) IS shown: the buyer sees the listing is being
+# the sale continues with no buyer-facing restriction.
+# `correction_window` (Agent 2 audit) IS shown: the buyer sees the listing is being
 # corrected (a heads-up), and the reason carries the dominant complaint.
 _RESTRICTED = {"locked", "on_hold", "needs_info", "suspended", "correction_window"}
 
@@ -46,12 +46,16 @@ def _latest_decision_action(db: Session, product_id: str) -> CatalogAction | Non
     return rows[0] if rows else None
 
 
-def _rating(p: Product) -> tuple[float, int]:
+def _rating(p: Product) -> tuple[float, int, int]:
+    """(avg, ratings_total, review_count). `ratings_total` counts rating-only submissions
+    too (real listings have ~3x more ratings than written reviews); it falls back to the
+    review count when unseeded. The average is always over the reviews we actually hold."""
     revs = p.reviews or []
     n = len(revs)
     if not n:
-        return 0.0, 0
-    return round(sum(r.rating for r in revs) / n, 1), n
+        return 0.0, p.ratings_total or 0, 0
+    avg = round(sum(r.rating for r in revs) / n, 1)
+    return avg, (p.ratings_total or n), n
 
 
 @router.get("", response_model=list[ProductOut])
@@ -59,7 +63,7 @@ def list_products(db: Session = Depends(get_db)):
     out = []
     for p in db.query(Product).all():
         dto = ProductOut.model_validate(p)
-        dto.rating, dto.rating_count = _rating(p)
+        dto.rating, dto.rating_count, dto.review_count = _rating(p)
         out.append(dto)
     return out
 
@@ -71,7 +75,7 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
         raise HTTPException(404, "product not found")
 
     detail = ProductDetail.model_validate(p)
-    detail.rating, detail.rating_count = _rating(p)
+    detail.rating, detail.rating_count, detail.review_count = _rating(p)
     detail.qc_requested = p.qc_requested_at is not None and not p.qc_responded
     if p.status in _RESTRICTED:
         last = _latest_decision_action(db, product_id)
@@ -108,7 +112,7 @@ def reverify(product_id: str, db: Session = Depends(get_db)):
         action="reverify",
         evidence_json={"from_status": prior, "note": "seller reverification accepted"},
         seller_approved=True,
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     ))
     db.commit()
     return {"product_id": p.id, "new_status": p.status, "from_status": prior}

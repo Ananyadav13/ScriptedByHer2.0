@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { API, api, type TraceEvent, type Verdict } from "@/lib/api";
+import { API, api, type MediaEvidence, type TraceEvent, type Verdict } from "@/lib/api";
 import { decisionMeta, toolMeta } from "@/lib/decisions";
 import { Badge, Button, Card, Spinner } from "@/components/ui";
+import { MediaEvidenceCard } from "@/components/MediaEvidenceCard";
 
 type Step = {
   name: string;
@@ -215,6 +216,12 @@ export function TracePanel({
             {steps.map((s, i) => {
               const tm = toolMeta(s.name);
               const rl = s.result ? resultLine(s.result) : null;
+              // a media-evidence result renders as a VISUAL comparison, not a text line
+              const media =
+                s.name === "check_media_evidence" && s.result && (s.result as MediaEvidence).available
+                  ? (s.result as MediaEvidence)
+                  : null;
+              const mismatch = media?.mismatch;
               return (
                 <li key={i} className="bt-rise flex gap-3">
                   <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-wash text-base">
@@ -225,13 +232,21 @@ export function TracePanel({
                       <span className="text-sm font-medium text-ink">{tm.label}</span>
                       {!s.done ? (
                         <Spinner className="text-brand" />
+                      ) : media ? (
+                        <Badge tone={mismatch ? "rose" : "green"}>{mismatch ? "mismatch" : "consistent"}</Badge>
                       ) : rl?.flag === true ? (
                         <Badge tone="rose">signal</Badge>
                       ) : rl?.flag === false ? (
                         <Badge tone="green">clear</Badge>
                       ) : null}
                     </div>
-                    {rl && <p className="mt-0.5 text-sm text-ink-soft">{rl.text}</p>}
+                    {media ? (
+                      <div className="mt-2">
+                        <MediaEvidenceCard ev={media} fallbackImg={media.product_id ?? "prod_fabric_kurti"} />
+                      </div>
+                    ) : rl ? (
+                      <p className="mt-0.5 text-sm text-ink-soft">{rl.text}</p>
+                    ) : null}
                   </div>
                 </li>
               );

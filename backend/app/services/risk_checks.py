@@ -1,4 +1,4 @@
-"""Deterministic risk checks — plain functions, NO LLM (PLAN.md §5, PHASES.md Phase 2).
+"""Deterministic risk checks — plain functions, NO LLM.
 
 Each returns a JSON-serializable dict with concrete numbers + a boolean `flag`,
 so the agent (and the SSE trace) can cite the exact evidence.
@@ -14,7 +14,7 @@ Design rules encoded here (from the idea deck):
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
+from ..time_utils import utcnow
 
 from .rules import (
     BURST_MIN_PEAK,
@@ -56,21 +56,6 @@ def price_mrp_risk(product) -> dict:
     }
 
 
-def image_match_risk(product) -> dict:
-    """Perceptual-hash match of listing images vs official reference images.
-
-    Reference images (`media/official_images/`) are added in Phase 3, so today
-    this reports `available: False` and never flags — counterfeit detection in
-    Phase 2 stands on price + review-burst + seller signals. The interface is
-    stable so Phase 3 only fills in the hash comparison.
-    """
-    return {
-        "available": False,
-        "flag": False,
-        "reason": "no official reference images yet (perceptual-hash match lands in Phase 3)",
-    }
-
-
 def review_burst_risk(product) -> dict:
     """Fake-review-burst detector.
 
@@ -84,9 +69,6 @@ def review_burst_risk(product) -> dict:
 
     per_day = Counter(r.created_at.date() for r in reviews)
     peak_day_count = max(per_day.values())
-    active_days = len(per_day)
-    mean_daily = total / active_days
-    burst_ratio = peak_day_count / mean_daily  # 1.0 == perfectly uniform
 
     new_accounts = sum(1 for r in reviews if r.reviewer_account_age_days < NEW_ACCOUNT_AGE_DAYS)
     new_share = new_accounts / total
@@ -96,7 +78,6 @@ def review_burst_risk(product) -> dict:
     return {
         "total_reviews": total,
         "peak_day_count": peak_day_count,
-        "burst_ratio": round(burst_ratio, 2),
         "new_account_share": round(new_share, 2),
         "flag": flag,
         "reason": (
@@ -118,7 +99,7 @@ def trustworthy_rating(product) -> dict:
     a good score, and genuine buyers of a cheap knockoff can still vouch for it.
     """
     reviews = list(product.reviews)
-    now = datetime.utcnow()
+    now = utcnow()
     weighted_sum = 0.0
     weight_total = 0.0
     counted = 0
@@ -157,7 +138,7 @@ def trustworthy_rating(product) -> dict:
 
 def seller_profile(seller) -> dict:
     """Seller trust snapshot, including repeat-offender case count."""
-    age_days = (datetime.utcnow() - seller.account_created_at).days
+    age_days = (utcnow() - seller.account_created_at).days
     flags = list(seller.trust_flags or [])
     new_account = age_days < 90 or "new_account_cluster" in flags
     repeat_offender = (seller.case_count or 0) >= REPEAT_CASE_COUNT
@@ -277,7 +258,7 @@ def qc_sla_status(product) -> dict:
     if requested_at is None:
         return {"qc_requested": False, "qc_responded": False, "qc_overdue": False,
                 "reason": "no quality-check video requested"}
-    days = (datetime.utcnow() - requested_at).days
+    days = (utcnow() - requested_at).days
     overdue = (not responded) and days >= SELLER_QC_SLA_DAYS
     return {
         "qc_requested": True,

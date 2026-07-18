@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -12,7 +11,8 @@ from ..agents import events
 from ..agents.agent1_tools import dispatch
 from ..agents.orchestrator import run_investigation
 from ..db import get_db
-from ..models import Investigation, Order, Product
+from ..models import Investigation, Manager, Order, Product, Seller
+from ..time_utils import utcnow
 
 router = APIRouter(tags=["investigations"])
 
@@ -36,7 +36,7 @@ def investigate(body: InvestigateIn, background: BackgroundTasks, db: Session = 
         trigger=body.trigger,
         status="queued",
         tool_calls_log_json=[],
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     ))
     db.commit()
 
@@ -56,7 +56,6 @@ def list_investigations(limit: int = 25, db: Session = Depends(get_db)):
         .limit(limit)
         .all()
     )
-    from ..models import Manager, Seller
     out = []
     for inv in rows:
         p = db.get(Product, inv.product_id) if inv.product_id else None
@@ -87,12 +86,11 @@ def list_investigations(limit: int = 25, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 # GET /agent1/evidence — the DETERMINISTIC "always-watching" layer (NO LLM).
 # Runs Agent 1's non-LLM tools so the evidence is visible even without quota;
-# the LLM only reasons over these on a trigger (PLAN §5A).
+# the LLM only reasons over these on a trigger.
 # ---------------------------------------------------------------------------
 def _items_from_catalog(c: dict) -> list[dict]:
     items = []
-    for key, label in (("price_mrp", "Price vs MRP"), ("review_burst", "Review burst"),
-                        ("image_match", "Image authenticity")):
+    for key, label in (("price_mrp", "Price vs MRP"), ("review_burst", "Review burst")):
         s = c.get(key) or {}
         if s.get("reason"):
             items.append({"label": label, "flag": bool(s.get("flag")), "detail": s["reason"]})

@@ -1,9 +1,10 @@
-# Local/self-hosted deployment with PERSISTENT data (no data loss on restart).
-# Render is fine for the hosted demo; this compose file is the good-practice
-# fallback that keeps the SQLite DB, logs and history on named volumes.
+# Full-stack local deployment: backend + frontend, one command.
 #
 #   GEMINI_API_KEY=your-key docker compose up --build
 #
+# Then open http://localhost:3000. Data persists on a named volume, so the SQLite
+# database, logs and moderation history survive a restart.
+
 services:
   backend:
     build: ./backend
@@ -14,11 +15,33 @@ services:
       DATABASE_URL: "sqlite:////data/build_trust.db"
       # do NOT wipe on boot — keep data across restarts
       SEED_RESET: "false"
-      GEMINI_API_KEY: "${GEMINI_API_KEY}"
-      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-*}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      # the origin the browser loads the UI from (never a wildcard alongside credentials)
+      FRONTEND_ORIGIN: "${FRONTEND_ORIGIN:-http://localhost:3000}"
     volumes:
       - db_data:/data            # SQLite database file — survives restarts
       - ./backend/logs:/app/logs # application logs / history on the host
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Baked into the client bundle at BUILD time. This URL is resolved by the
+        # BROWSER, so it points at the published host port — not the `backend` service name.
+        NEXT_PUBLIC_API_BASE: "${NEXT_PUBLIC_API_BASE:-http://localhost:8000}"
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

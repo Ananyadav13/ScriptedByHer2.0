@@ -218,7 +218,7 @@ These feed the **tripwire** triggers (see PLAN §5A: event-driven, not polling):
 
 ---
 
-## 8. Hybrid media evidence + advisory agent (15 Jul 2026 — see PLAN.md §5B)
+## 8. Hybrid media evidence + advisory agent (15 Jul 2026)
 
 Buyer review-videos are too scarce to depend on, so evidence is **hybrid** and the agent is **advisory** on it.
 
@@ -227,7 +227,7 @@ Buyer review-videos are too scarce to depend on, so evidence is **hybrid** and t
 - **Advisory, not binding.** Media comparison is uncertain (item may not have reached the buyer; lighting; wear), so Agent 1 returns **`decision = recommend_review`** with `recommended_action` + `suggested_remedy` (new `Verdict` fields) and routes it to the **manager queue** as a soft **`flagged`** status — *the sale continues, no buyer impact.* Only deterministic hard signals (price + burst + no genuine reviews) take an interim protective lock, which the manager still confirms. Agents recommend; managers decide.
 - **Statuses:** `flagged` (advisory, non-restrictive) vs the restrictive `locked`/`on_hold`/`needs_info`/`suspended`.
 
-*Storage (production concern, not in the demo DB): object store + keyframes/embeddings as the working set, archive/discard raw video, LLM only on tripwire. See PLAN.md §5B.*
+*Storage (production concern, not in the demo DB): object store + keyframes/embeddings as the working set, archive/discard raw video, LLM only on tripwire.*
 
 ---
 

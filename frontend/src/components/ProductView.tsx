@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import type { ProductDetail } from "@/lib/api";
 import { statusMeta } from "@/lib/decisions";
-import type { DemoOrder } from "@/lib/orders";
 import {
   additionalDetails,
   highlights,
@@ -13,26 +12,17 @@ import {
   ratingTone,
   reviewDisplay,
   sellerInfo,
-  sizeChart,
   sizeOptions,
+  sizeSpec,
 } from "@/lib/catalog";
 import { VerifyPanel } from "@/components/VerifyPanel";
-import { DisputeCard } from "@/components/DisputeCard";
 import { BuyFlowModal } from "@/components/BuyFlowModal";
-import { PRODUCT_IMAGES } from "@/lib/productImages";
+import { productImage, productImages } from "@/lib/productImages";
 
 const money = (n: number) => "₹" + Math.round(n).toLocaleString("en-IN");
 const compact = (n: number) =>
   n >= 100000 ? (n / 100000).toFixed(1) + " L" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n);
 
-function Stars({ n, className = "" }: { n: number; className?: string }) {
-  return (
-    <span className={className}>
-      <span className="text-amber">{"★".repeat(n)}</span>
-      <span className="text-line">{"★".repeat(5 - n)}</span>
-    </span>
-  );
-}
 
 function Section({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
   return (
@@ -46,29 +36,25 @@ function Section({ title, children, action }: { title: string; children: React.R
   );
 }
 
-export function ProductView({
-  detail: p,
-  orders,
-  focusOrder,
-}: {
-  detail: ProductDetail;
-  orders: DemoOrder[];
-  focusOrder?: string;
-}) {
+export function ProductView({ detail: p }: { detail: ProductDetail }) {
   const discount = p.mrp > p.price ? Math.round((1 - p.price / p.mrp) * 100) : 0;
   const seller = sellerInfo(p.seller_id);
   const sizes = sizeOptions(p.category);
-  const chart = sizeChart(p.category);
+  const spec = sizeSpec(p);
+  const chart = spec && (spec.kind === "apparel" || spec.kind === "footwear") ? spec : null;
   const rs = ratingSummary(p.reviews);
   const headlineRating = rs.avg || p.rating || 4.0;
   const maxBucket = Math.max(1, ...rs.rows.map((r) => r.count));
   const photoReviews = p.reviews.filter((r) => r.has_video);
 
+  const variants = p.variants ?? [];
+  const refVariant = variants.find((v) => v.is_listing_reference);
+  const [variant, setVariant] = useState<string | null>(refVariant?.id ?? variants[0]?.id ?? null);
   const [size, setSize] = useState<string | null>(null);
   const [showChart, setShowChart] = useState(false);
   const sm = statusMeta(p.status);
 
-  const imgs = PRODUCT_IMAGES[p.id] ?? [`/products/${p.id}.jpg`];
+  const imgs = productImages(p.id);
   const [img, setImg] = useState(0);
   const [buyMode, setBuyMode] = useState<"cart" | "buy" | null>(null);
 
@@ -147,9 +133,48 @@ export function ProductView({
           >
             {headlineRating.toFixed(1)} ★
           </span>
-          <span className="text-xs text-ink-faint">({compact(rs.total || p.rating_count)})</span>
+          <span className="text-xs text-ink-faint">
+            {compact(p.rating_count || rs.total)} Ratings, {compact(rs.total)} Reviews
+          </span>
         </div>
       </div>
+
+      {/* colour / variant selector — the listing video only reflects the reference variant */}
+      {variants.length > 0 && (
+        <div className="border-t-8 border-[#f2f2f7] px-4 py-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
+            Select Colour
+            <span className="font-normal text-ink-faint">
+              · {variants.find((v) => v.id === variant)?.name}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2.5">
+            {variants.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setVariant(v.id)}
+                className={`flex items-center gap-1.5 rounded-full border px-3 py-2 text-sm transition ${
+                  variant === v.id ? "border-brand bg-brand-wash text-brand-ink" : "border-line bg-surface text-ink hover:border-brand/50"
+                }`}
+              >
+                <span
+                  className="h-4 w-4 rounded-full border border-black/10"
+                  style={{ background: v.colour ?? "#ccc" }}
+                />
+                {v.name}
+                {v.is_listing_reference && <span title="Seller's listing video shows this colour">🎥</span>}
+              </button>
+            ))}
+          </div>
+          {refVariant && variant !== refVariant.id && (
+            <p className="mt-2 rounded-lg bg-brand-wash px-3 py-2 text-xs text-brand-ink">
+              🎥 The seller filmed the <span className="font-semibold">{refVariant.name}</span> colour. Build Trust
+              compares a dispute on this colour by fabric quality, not shade — so a different colourway is never
+              mistaken for a different product.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* size selector */}
       {sizes.length > 0 && (
@@ -168,6 +193,28 @@ export function ProductView({
               </button>
             ))}
           </div>
+
+          {/* real measurements the seller DID provide (bags/jewellery: L x W x H) */}
+          {spec?.kind === "dimensions" && (
+            <dl className="mt-4 space-y-2">
+              <div className="text-xs font-medium text-brand-ink">Product Dimensions</div>
+              {spec.rows.map(([k, v]) => (
+                <div key={k} className="flex justify-between gap-4 text-sm">
+                  <dt className="text-ink-faint">{k}</dt>
+                  <dd className="text-right font-medium text-ink">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {/* the seller shipped "Free Size" and no measurements — the gap that drives
+              "good quality but small size" returns. Say it rather than render nothing. */}
+          {spec?.kind === "missing" && (
+            <div className="mt-4 rounded-lg bg-amber-wash px-3 py-2.5 text-xs text-amber">
+              <span className="font-semibold">⚠ No measurements provided.</span> This seller lists only
+              “Free Size” — Build Trust has asked them for the item’s dimensions.
+            </div>
+          )}
 
           {chart && (
             <div className="mt-4">
@@ -245,8 +292,11 @@ export function ProductView({
           <div>
             <div className="text-[11px] text-ink-faint">Sold by</div>
             <div className="text-sm font-semibold text-ink">{seller.name}</div>
+            <div className="text-[11px] text-ink-faint">
+              {seller.ratings} Ratings · {seller.followers} Followers · {seller.products} Products
+            </div>
           </div>
-          <span className="ml-1 inline-flex items-center gap-0.5 rounded border border-green/40 px-1.5 py-0.5 text-xs font-semibold text-green">
+          <span className="ml-1 inline-flex items-center gap-0.5 self-start rounded border border-green/40 px-1.5 py-0.5 text-xs font-semibold text-green">
             {seller.rating.toFixed(1)} ★
           </span>
         </div>
@@ -309,7 +359,7 @@ export function ProductView({
             <div className="flex gap-2 overflow-x-auto">
               {photoReviews.slice(0, 5).map((r) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={r.id} src={`/products/${p.id}.jpg`} alt="" className="h-16 w-16 shrink-0 rounded-md bg-[#f2f2f7] object-contain" />
+                <img key={r.id} src={productImage(p.id)} alt="" className="h-16 w-16 shrink-0 rounded-md bg-[#f2f2f7] object-contain" />
               ))}
               {photoReviews.length > 5 && (
                 <div className="grid h-16 w-16 shrink-0 place-items-center rounded-md bg-black/70 text-xs font-semibold text-white">
@@ -343,7 +393,7 @@ export function ProductView({
                   <div className="mt-2 flex gap-2">
                     {Array.from({ length: d.photos }).map((_, i) => (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img key={i} src={`/products/${p.id}.jpg`} alt="" className="h-14 w-14 rounded-md bg-[#f2f2f7] object-contain" />
+                      <img key={i} src={productImage(p.id)} alt="" className="h-14 w-14 rounded-md bg-[#f2f2f7] object-contain" />
                     ))}
                   </div>
                 )}
@@ -359,17 +409,6 @@ export function ProductView({
           {p.reviews.length === 0 && <p className="text-sm text-ink-faint">No reviews yet.</p>}
         </div>
       </Section>
-
-      {/* disputes */}
-      {orders.length > 0 && (
-        <Section title="Your orders">
-          <div className="space-y-4">
-            {orders.map((o) => (
-              <DisputeCard key={o.id} order={o} highlight={o.id === focusOrder} />
-            ))}
-          </div>
-        </Section>
-      )}
 
       {/* sticky buy bar — each action runs Agent 1 first (verify before you buy) */}
       <div className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-2xl gap-3 border-t border-line bg-surface px-4 py-2.5">

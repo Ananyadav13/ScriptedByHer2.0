@@ -1,17 +1,28 @@
 """Shared pytest fixtures + lightweight object factories.
 
 Most deterministic services touch only a handful of attributes, so we build plain
-SimpleNamespace stand-ins (fast, no DB) for unit tests. A seeded-DB session fixture is
-provided for the few functions that query (fit_prediction).
+SimpleNamespace stand-ins (fast, no DB) for unit tests. A seeded-DB session fixture and
+a TestClient fixture are provided for the tests that need the real stack.
+
+The DATABASE_URL override below MUST run before anything imports `app.config`, because
+`app.db` builds its engine from the settings at import time. Without it the suite would
+drop and reseed the developer's working database on every run.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from types import SimpleNamespace
+import os
 
-import pytest
+os.environ["DATABASE_URL"] = "sqlite:///./test_build_trust.db"
+os.environ["SEED_RESET"] = "true"
 
-NOW = datetime.utcnow()
+from datetime import timedelta          # noqa: E402  (import after the env override)
+from types import SimpleNamespace       # noqa: E402
+
+import pytest                           # noqa: E402
+
+from app.time_utils import utcnow       # noqa: E402
+
+NOW = utcnow()
 
 
 def days_ago(d: float) -> datetime:
@@ -71,3 +82,38 @@ def seeded_db():
     db = SessionLocal()
     yield db
     db.close()
+
+
+@pytest.fixture(scope="module")
+def client(request):
+    """TestClient over the real app on a freshly seeded test database.
+
+    Every LLM entry point is stubbed out: these are endpoint smoke tests, so they must
+    run offline, deterministically, and without spending Gemini quota. `run_investigation`
+    is what FastAPI's BackgroundTasks would otherwise execute synchronously once the
+    response is returned — leaving it live would fire a real agent loop per request.
+    """
+    from fastapi.testclient import TestClient
+
+    from app import seed
+    from app.agents import agent2
+    from app.main import app
+    from app.routers import catalog, disputes, investigations
+
+    mp = pytest.MonkeyPatch()
+
+    def _no_llm_investigation(*args, **kwargs):
+        return None
+
+    mp.setattr(disputes, "run_investigation", _no_llm_investigation)
+    mp.setattr(investigations, "run_investigation", _no_llm_investigation)
+    mp.setattr(catalog, "run_investigation", _no_llm_investigation, raising=False)
+    # Agent 2's two LLM calls: clustering and fix drafting. Both already degrade
+    # gracefully in production; here we pin them so /audit is fully deterministic.
+    mp.setattr(agent2, "cluster_reviews", lambda pid, db: {"dominant": None, "clusters": []})
+    mp.setattr(agent2, "draft_fix", lambda p, cluster, db: None)
+
+    seed.reset_and_seed()
+    with TestClient(app) as c:
+        yield c
+    mp.undo()

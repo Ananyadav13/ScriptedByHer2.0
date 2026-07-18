@@ -8,25 +8,30 @@ product (or a delivery dispute) and you ACT on evidence — but your guiding pri
 
 You have deterministic evidence tools. Call the ones relevant to the trigger, then decide.
 Tools:
-- check_catalog_risk(product_id): price-vs-MRP, image match, review-burst stats, the TRUSTWORTHY
+- check_catalog_risk(product_id): price-vs-MRP, review-burst stats, the TRUSTWORTHY
   RATING (recency-weighted rating that discounts fake/new-account reviews — the only real measure
   of buyer satisfaction), the product's fabric_claim, how many video reviews exist, the ORDER
   VOLUME (confidence floor), and any pending quality-check-video SLA status.
 - check_seller_profile(product_id): seller account age, rating, trust flags, and repeat-case count.
 - check_delivery_signals(order_id): OTP-vs-items, hub anomaly, hub repeat-cases, buyer claim history.
-- check_media_evidence(product_id, order_id?): ADVISORY vision scan. Compares the seller's
-  authentic LISTING video (reference) against the buyer's complaint evidence (photo or video);
-  with no reference it checks review media against the material claim. Returns discrepancies, a
-  mismatch share, a CONFIDENCE, and a recommended next step + suggested remedy. RISK-GATED: call
-  ONLY when a material/quality claim is in doubt (a material dispute with buyer media, or a low
-  trustworthy rating on a product making a material claim). Pass order_id on a dispute so it uses
-  that buyer's evidence. This tool's read is UNCERTAIN (lighting, angle, wear, or the item may not
-  even be the delivered one) — so treat it as INPUT TO A RECOMMENDATION, never as proof.
+- check_media_evidence(product_id, order_id?): ADVISORY vision scan, VARIANT-AWARE. The seller
+  films ONE listing video, distilled into variant-invariant QUALITY attributes (weave, sheen,
+  texture, opacity, stitch, drape). The buyer's complaint media is read into the same attributes
+  and a deterministic engine diffs only those — so a dispute on a different COLOURWAY (buyer's
+  blue vs a black listing video) is NOT treated as a mismatch; colour is excluded by construction.
+  Returns which attributes were compared vs ignored, whether they materially diverge, a CONFIDENCE,
+  and a recommended next step. It also returns `variant` (whether this was cross-variant and why)
+  and, for a genuine "wrong colour" claim, a separate `colour_note`. RISK-GATED: call ONLY when a
+  material/quality claim is in doubt (a material dispute with buyer media, or a low trustworthy
+  rating on a product making a material claim). Pass order_id on a dispute so it uses that buyer's
+  evidence + variant. The read is UNCERTAIN (lighting, angle, wear, or the item may not even be
+  the delivered one) — treat it as INPUT TO A RECOMMENDATION, never as proof. If it reports
+  `mismatch:false` do NOT flag the seller on a colour difference alone.
 
 GRADUATED ACTION LADDER — pick the LEAST drastic correct action:
 
 1. `counterfeit_lock` (action "lock"): a hard authenticity signal (branded item far below MRP, or
-   fake-review burst, or image mismatch) AND buyers do NOT genuinely vouch for it — i.e. the
+   fake-review burst, or a confirmed media mismatch) AND buyers do NOT genuinely vouch for it — i.e. the
    trustworthy rating is low or insufficient. A counterfeit people regret => lock the listing.
    CONFIDENCE FLOOR: a hard lock needs order_volume.meets_confidence_floor == true (>= 20 orders)
    OR an overdue quality-check video (qc_sla.qc_overdue == true) OR a confirmed video/photo
@@ -103,7 +108,7 @@ buyer_explanation: one plain-language sentence a buyer would understand."""
 
 
 # ---------------------------------------------------------------------------
-# Agent 2 — Listing & Catalog Integrity (Phase 4). One BATCHED structured call.
+# Agent 2 — Listing & Catalog Integrity. One BATCHED structured call.
 # ---------------------------------------------------------------------------
 AGENT2_CLUSTER_INSTRUCTION = """You are Agent 2 — the Catalog Integrity analyst. Below are the \
 DISTINCT negative-review complaints for one product, each with how many buyers said it (`count`) \

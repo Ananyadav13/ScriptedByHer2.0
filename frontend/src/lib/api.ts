@@ -20,18 +20,86 @@ export type Product = {
   mrp: number;
   images: string[];
   fabric_claim: string | null;
+  size_chart_json: Record<string, string> | null;
   status: string;
   knockoff_flag: boolean;
   buyer_tip: string | null;
   rating: number;
   rating_count: number;
+  review_count: number;
+};
+
+export type Variant = {
+  id: string;
+  name: string;
+  colour: string | null;
+  is_listing_reference: boolean;
 };
 
 export type ProductDetail = Product & {
   reviews: Review[];
+  variants: Variant[];
   lock_reason: string | null;
   latest_action: string | null;
   qc_requested: boolean;
+};
+
+export type OrderReaction = {
+  route: string;
+  tone: "amber" | "teal" | "brand" | "neutral";
+  label: string;
+};
+export type BuyerOrder = {
+  id: string;
+  product_id: string;
+  product_title: string;
+  price: number | null;
+  variant: string | null;
+  delivered_at: string | null;
+  status: string;
+  claim_type: string | null;
+  hub_name: string | null;
+  dispute_available: boolean;
+  reaction: OrderReaction;
+};
+export type ClaimContext = {
+  claim_count: number;
+  is_serial_claimer: boolean;
+  note: string;
+};
+export type BuyerOrders = {
+  buyer_id: string;
+  claim_context: ClaimContext;
+  order_count: number;
+  orders: BuyerOrder[];
+};
+export type BuyerSummary = {
+  id: string;
+  name: string;
+  claim_count: number;
+  is_serial_claimer: boolean;
+  order_count: number;
+};
+
+// shape of the check_media_evidence tool result (rendered as a visual card in the trace)
+export type MediaEvidence = {
+  available?: boolean;
+  product_id?: string;
+  claimed_material?: string;
+  variant?: { cross_variant?: boolean; listing_video_variant?: string | null; ordered_variant?: string | null; reason?: string };
+  reference_frame_urls?: string[];
+  evidence_frame_urls?: string[];
+  reference_summary?: string;
+  observed_summary?: string;
+  reference_attributes?: Record<string, string>;
+  observed_attributes?: Record<string, string>;
+  compared_attributes?: string[];
+  diverged_attributes?: string[];
+  ignored_attributes?: string[];
+  mismatch?: boolean;
+  colour_note?: string | null;
+  confidence?: number;
+  reason?: string;
 };
 
 export type Verdict = {
@@ -115,6 +183,9 @@ export const api = {
     ),
   listingCheck: (body: {
     category: string;
+    title?: string | null;
+    description?: string | null;
+    color?: string | null;
     size_chart_json?: unknown;
     fabric_claim?: string | null;
     listing_video_path?: string | null;
@@ -129,24 +200,25 @@ export const api = {
     fetch(`${API}/manager/${id}/queue`, { cache: "no-store" }).then(j<ManagerQueue>),
   managerSellers: (id: string) =>
     fetch(`${API}/manager/${id}/sellers`, { cache: "no-store" }).then(j<ManagerSellers>),
-  managerApiAccess: (id: string) =>
-    fetch(`${API}/manager/${id}/api-access`, { cache: "no-store" }).then(j<ManagerApiAccess>),
-  rotateApiKey: (id: string) =>
-    fetch(`${API}/manager/${id}/api-access/rotate`, { method: "POST" }).then(
-      j<{ manager_id: string; api_key: string }>,
-    ),
   notificationsFor: (audience: string, recipient_id: string) =>
     fetch(`${API}/notifications?audience=${audience}&recipient_id=${recipient_id}`, {
       cache: "no-store",
     }).then(j<Notif[]>),
-  managerDecide: (manager_id: string, product_id: string, decision: string) =>
+  managerDecide: (manager_id: string, product_id: string, decision: string, comment?: string) =>
     fetch(`${API}/manager/${manager_id}/products/${product_id}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    }).then(j<{ product_id: string; new_status: string; decision: string }>),
-  notifications: () => fetch(`${API}/notifications`, { cache: "no-store" }).then(j<Notification[]>),
-  hubs: () => fetch(`${API}/hubs`, { cache: "no-store" }).then(j<Hub[]>),
+      body: JSON.stringify({ decision, comment }),
+    }).then(j<{ product_id: string; new_status: string; decision: string; buyers_notified: number }>),
+  managerDecideDispute: (manager_id: string, order_id: string, decision: string, comment?: string) =>
+    fetch(`${API}/manager/${manager_id}/disputes/${order_id}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision, comment }),
+    }).then(j<{ order_id: string; new_status: string; decision: string }>),
+  buyers: () => fetch(`${API}/buyers`, { cache: "no-store" }).then(j<BuyerSummary[]>),
+  buyerOrders: (buyer_id: string) =>
+    fetch(`${API}/buyers/${buyer_id}/orders`, { cache: "no-store" }).then(j<BuyerOrders>),
 };
 
 export type FitResult = {
@@ -200,26 +272,22 @@ export type DraftsResult = { seller_id: string; count: number; drafts: Draft[] }
 
 export type ManagerInfo = { id: string; name: string; seller_count: number };
 export type ManagerQueueItem = {
+  kind?: "listing" | "dispute";
   product_id: string;
   title: string;
-  seller_id: string;
+  seller_id: string | null;
   status: string;
-  agent_action: string | null;
+  agent_action?: string | null;
   evidence: Record<string, unknown> | null;
   acted_at: string | null;
+  // dispute-only fields
+  order_id?: string;
+  claim_type?: string | null;
+  buyer_id?: string;
+  buyer_claim_count?: number;
 };
 export type ManagerQueue = { manager_id: string; queue_size: number; items: ManagerQueueItem[] };
 
-export type Notification = {
-  id: string;
-  audience: string;
-  subject: string;
-  body: string;
-  priority: string;
-  related_id: string | null;
-  created_at: string;
-};
-export type Hub = { id: string; name: string; region: string; score: number; case_count: number };
 
 export type Agent2Issue = {
   type: string;
@@ -313,12 +381,4 @@ export type ManagerSellers = {
   name: string;
   seller_count: number;
   sellers: ManagerSeller[];
-};
-
-export type ManagerApiAccess = {
-  manager_id: string;
-  name: string;
-  api_key: string | null;
-  base_url: string;
-  endpoints: { method: string; path: string; desc: string }[];
 };

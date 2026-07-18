@@ -47,6 +47,11 @@ function CaseCard({ c }: { c: InvestigationSummary }) {
             {c.seller_name && <>seller <b className="text-ink-soft">{c.seller_name}</b> · </>}
             {c.manager && <>manager <b className="text-ink-soft">{c.manager}</b></>}
           </div>
+          <div className="mt-0.5 text-[11px] text-ink-faint">
+            {new Date(c.created_at).toLocaleString("en-IN", {
+              day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+            })}
+          </div>
         </div>
         <div className="text-right">
           <Badge tone={dm.tone}>{dm.label}</Badge>
@@ -97,10 +102,9 @@ export default function Agent1Page() {
       const r = active.order_id
         ? await api.dispute({ order_id: active.order_id, claim_type: "item_not_as_described" })
         : await api.investigate({ product_id: active.product_id!, trigger: active.trigger });
-      setTimeout(loadCases, 1500);
       return r.investigation_id;
     },
-    [active, loadCases],
+    [active],
   );
 
   const stats = useMemo(() => {
@@ -235,7 +239,15 @@ export default function Agent1Page() {
               <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink">
                 Live investigation <Badge tone="brand">LLM on trigger</Badge>
               </h3>
-              <TracePanel key={active.key} label="Run Agent 1" sublabel={active.label} start={start} />
+              {/* refresh the feed the moment the verdict lands, so the new case appears
+                  at the top WITH its outcome (the backend already orders newest-first) */}
+              <TracePanel
+                key={active.key}
+                label="Run Agent 1"
+                sublabel={active.label}
+                start={start}
+                onResolve={loadCases}
+              />
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-"""Post-delivery dispute API (Phase 3).
+"""Post-delivery dispute API.
 
 A dispute is an investigation with trigger `post_delivery` keyed on an ORDER. The
 orchestrator corroborates delivery signals (OTP-vs-items, hub anomaly, missing
@@ -10,7 +10,6 @@ the trace panel wholesale.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
@@ -20,6 +19,7 @@ from ..agents import events
 from ..agents.orchestrator import run_investigation
 from ..db import get_db
 from ..models import Investigation, Order
+from ..time_utils import utcnow
 
 router = APIRouter(tags=["disputes"])
 
@@ -36,10 +36,12 @@ def open_dispute(body: DisputeIn, background: BackgroundTasks, db: Session = Dep
     if not order:
         raise HTTPException(404, "order not found")
 
-    # attach buyer evidence so check_media_evidence can compare it to the listing video
+    # attach buyer evidence + the claim so check_media_evidence can compare against the
+    # product's quality fingerprint (and know whether COLOUR is in scope for this claim)
     if body.evidence_paths:
         order.buyer_evidence_json = list(body.evidence_paths)
-        db.commit()
+    order.claim_type = body.claim_type
+    db.commit()
 
     inv_id = f"inv_{uuid.uuid4().hex[:12]}"
     db.add(Investigation(
@@ -49,7 +51,7 @@ def open_dispute(body: DisputeIn, background: BackgroundTasks, db: Session = Dep
         trigger="post_delivery",
         status="queued",
         tool_calls_log_json=[],
-        created_at=datetime.utcnow(),
+        created_at=utcnow(),
     ))
     db.commit()
 

@@ -21,7 +21,10 @@ def _str_param(desc: str) -> types.Schema:
 
 CHECK_CATALOG_RISK = types.FunctionDeclaration(
     name="check_catalog_risk",
-    description="Price-vs-MRP ratio, image-authenticity match, and review-burst statistics for a product.",
+    description=(
+        "Price-vs-MRP ratio, review-burst statistics, the trustworthy (new-account-discounted) "
+        "rating, order volume and quality-check-video SLA status for a product."
+    ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={"product_id": _str_param("The product to analyze.")},
@@ -52,14 +55,15 @@ CHECK_DELIVERY_SIGNALS = types.FunctionDeclaration(
 CHECK_MEDIA_EVIDENCE = types.FunctionDeclaration(
     name="check_media_evidence",
     description=(
-        "ADVISORY vision scan. Compares the seller's authentic LISTING video (reference) "
-        "against the buyer's complaint evidence (photo or video); when there is no "
-        "reference it checks the review media against the listing's material claim. "
-        "Returns concrete discrepancies, a mismatch share, a CONFIDENCE, and a "
-        "recommended next step + suggested remedy for the product manager. Call ONLY "
-        "when a material/quality claim is in doubt (a material dispute with buyer media, "
-        "or a low trustworthy rating on a product making a material claim). This tool "
-        "NEVER decides a punishment — it produces a recommendation."
+        "ADVISORY vision scan, VARIANT-AWARE. The seller's ONE listing video is distilled into "
+        "variant-invariant QUALITY attributes (weave, sheen, texture, opacity, stitch, drape); "
+        "the buyer's complaint media is read into the same attributes and a deterministic engine "
+        "diffs ONLY those. A dispute on a different COLOURWAY is therefore never a mismatch on "
+        "colour alone — colour/shade are excluded by construction. Returns which attributes were "
+        "compared vs ignored, whether they materially diverge, a CONFIDENCE, variant context, and "
+        "a separate colour_note for a genuine wrong-colour claim. Call ONLY when a material/quality "
+        "claim is in doubt (a material dispute with buyer media, or a low trustworthy rating on a "
+        "product making a material claim). This tool NEVER decides a punishment — it recommends."
     ),
     parameters=types.Schema(
         type=types.Type.OBJECT,
@@ -84,7 +88,6 @@ def dispatch(name: str, args: dict, db) -> dict:
         order_count = db.query(Order).filter(Order.product_id == product.id).count()
         return {
             "price_mrp": risk_checks.price_mrp_risk(product),
-            "image_match": risk_checks.image_match_risk(product),
             "review_burst": risk_checks.review_burst_risk(product),
             "trustworthy_rating": risk_checks.trustworthy_rating(product),
             # context for the video-scan gate + the hard-lock confidence floor

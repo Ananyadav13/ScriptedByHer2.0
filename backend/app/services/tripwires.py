@@ -1,4 +1,4 @@
-"""Deterministic tripwires — NO LLM (Phase 4, task 6).
+"""Deterministic tripwires — NO LLM.
 
 The "event-driven, not polling" model (PLAN §5A): cheap deterministic watchers scan the
 catalogue; when one trips, the caller FIRES an Agent-1 investigation (`run_investigation`).
@@ -11,9 +11,8 @@ Three watchers, all reading `rules.py` constants:
 """
 from __future__ import annotations
 
-from datetime import datetime
-
 from ..models import Order, Product
+from ..time_utils import utcnow
 from .rules import (
     DISPUTE_RATE_ALERT,
     NEW_ACCOUNT_AGE_DAYS,
@@ -26,7 +25,7 @@ from .rules import (
 def _windowed_rating(product: Product, start_days_ago: float, end_days_ago: float) -> tuple[float | None, int]:
     """Plain avg rating of genuine (established-account) reviews created within the
     (end_days_ago, start_days_ago] window. Returns (avg or None, count)."""
-    now = datetime.utcnow()
+    now = utcnow()
     total = 0.0
     n = 0
     for r in product.reviews:

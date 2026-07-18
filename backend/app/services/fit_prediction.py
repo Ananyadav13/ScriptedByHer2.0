@@ -1,4 +1,4 @@
-"""Deterministic fit prediction — a pure JOIN, NO LLM (PHASES.md Phase 4, task 1).
+"""Deterministic fit prediction — a pure JOIN, NO LLM.
 
 Given a buyer and a product, predict the size that will actually fit by combining:
   1. the buyer's own KEPT-size history (sizes they bought and did NOT return), and

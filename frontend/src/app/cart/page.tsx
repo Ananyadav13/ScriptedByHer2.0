@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type FitResult } from "@/lib/api";
 import { Badge, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
+import { productImage } from "@/lib/productImages";
 
 const BUYER = "buyer_normal";
 const PRODUCT = "prod_size_shoes";
@@ -27,9 +28,9 @@ export default function CartPage() {
   return (
     <Page>
       <SectionTitle
-        eyebrow="Agent 2 · fit prediction"
+        eyebrow="Trusty · Agent 2 recommendation"
         title="Your cart"
-        sub="Deterministic size adjustment from real return data — no LLM on this path."
+        sub="Before you buy, Trusty predicts your true size from real return data — a pre-purchase recommendation, no LLM on this path."
       />
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
@@ -37,7 +38,7 @@ export default function CartPage() {
           <div className="flex gap-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/products/${PRODUCT}.jpg`}
+              src={productImage(PRODUCT)}
               alt="Running Shoes"
               className="h-24 w-24 shrink-0 rounded-xl object-cover"
             />
@@ -121,10 +122,10 @@ export default function CartPage() {
             fast, free, and explainable.
           </p>
           <Link
-            href="/product/prod_size_shoes?order=order_otp_dispute"
+            href="/orders"
             className="mt-3 inline-block text-sm font-medium text-brand-ink hover:underline"
           >
-            See a delivery dispute for this product →
+            See your orders & open a delivery dispute →
           </Link>
         </Card>
       </div>

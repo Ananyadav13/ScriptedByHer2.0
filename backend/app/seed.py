@@ -1,4 +1,4 @@
-"""Seed the 6 golden-path scenarios (PLAN.md §3). Idempotent: drops + recreates in dev.
+"""Seed the demo catalog and golden-path scenarios. Idempotent: drops + recreates in dev.
 
 Stable IDs are load-bearing — frontend scenario buttons and later phases reference them.
 """
@@ -11,14 +11,17 @@ from .models import (
     Hub,
     Investigation,
     Manager,
+    Notification,
     Order,
     Product,
+    ProductVariant,
     Review,
     Seller,
     SizeDrift,
 )
+from .time_utils import utcnow
 
-NOW = datetime.utcnow()
+NOW = utcnow()
 
 
 def _dt(days_ago: float) -> datetime:
@@ -53,9 +56,9 @@ def create_and_seed_if_empty():
 def _seed(db):
     # ---------- MANAGERS (business managers own a book of sellers) ----------
     db.add_all([
-        Manager(id="mgr_north", name="Priya (North zone)", api_key="bt_live_north_7Kd2Xp9QaR4mZ"),
-        Manager(id="mgr_south", name="Arjun (South zone)", api_key="bt_live_south_3Fh8Lm5WcT6nB"),
-        Manager(id="mgr_west", name="Rohan (West zone)", api_key="bt_live_west_9Jq1Vs7YbN2xE"),
+        Manager(id="mgr_north", name="Priya (North zone)"),
+        Manager(id="mgr_south", name="Arjun (South zone)"),
+        Manager(id="mgr_west", name="Rohan (West zone)"),
     ])
 
     # ---------- SELLERS (manager_id links each to a business manager) ----------
@@ -91,10 +94,13 @@ def _seed(db):
         Seller(id="seller_jewelry", name="ShineOn Jewels", rating=2.1,
                account_created_at=_dt(260), trust_flags=["quality_complaints"],
                case_count=3, manager_id="mgr_north"),
-        Seller(id="seller_saree", name="SilkTradition", rating=4.0,
-               account_created_at=_dt(540), trust_flags=[], manager_id="mgr_south"),
         Seller(id="seller_mobile", name="SmartWorld Mobiles", rating=3.5,
                account_created_at=_dt(330), trust_flags=[], manager_id="mgr_west"),
+        # good seller whose bag listing carries a MEASUREMENT gap (not a fraud problem).
+        # Under mgr_north so the seller-journey walkthrough shows this seller + EthnicWeave
+        # (the kurti) in one manager view.
+        Seller(id="seller_bags", name="Aaraals Collection", rating=4.0,
+               account_created_at=_dt(610), trust_flags=[], manager_id="mgr_north"),
     ]
     db.add_all(sellers)
 
@@ -108,76 +114,121 @@ def _seed(db):
         # 2. Honest viral seller: legit product, sudden volume, but old real accounts
         Product(id="prod_viral_honest", seller_id="seller_viral",
                 title="Checked Cotton Casual Shirt (Viral)", brand="TrendyThreads", category="apparel",
-                price=499, mrp=999, images=["tshirt_real.jpg"],
-                fabric_claim="100% cotton", status="active"),
-        # 3. Fabric mismatch: claims cotton, reviews say synthetic (hybrid media, Phase 3).
-        #    listing_video_path = the seller's authentic listing video (reference); left
-        #    None until a real recording is dropped into media/videos/ (e.g. "kurti_listing.mp4").
+                price=251, mrp=278, images=["tshirt_real.jpg"],
+                fabric_claim="100% cotton", status="active",
+                size_chart_json={"M": "38", "L": "40", "XL": "42", "XXL": "44"}),
+        # 3. Fabric mismatch: claims cotton, reviews say synthetic (hybrid media).
+        #    Sold in 3 colourways but the seller filmed ONE listing video (the Black variant).
+        #    quality_fingerprint_json = the variant-invariant "golden fields" distilled from
+        #    that video, so a dispute on the BLUE variant is judged on weave/sheen/texture,
+        #    NOT on colour (which would false-flag the honest seller). Pre-seeded here so the
+        #    cross-variant demo works with zero LLM quota; a real recording dropped into
+        #    media/videos/ + a cleared fingerprint would re-extract it live.
         Product(id="prod_fabric_kurti", seller_id="seller_kurti",
-                title="Pure Cotton Anarkali Kurti", brand="EthnicWeave", category="apparel",
-                price=799, mrp=1599, images=["kurti.jpg"],
-                fabric_claim="pure cotton", status="active", listing_video_path=None,
-                size_chart_json={"S": "36", "M": "38", "L": "40"}),
-        # 4. Size drift: brand runs small (see SizeDrift + buyer history)
+                title="Rayon Embroidered Anarkali Kurti", brand="EthnicWeave", category="apparel",
+                price=384, mrp=426, images=["kurti.jpg"],
+                fabric_claim="rayon", status="active",
+                listing_video_path="kurti_listing_black.mp4",
+                # frames sampled from the seller's listing video (the BLACK variant they filmed) —
+                # the buyer's real photos live in frontend/public/evidence/.
+                listing_frame_urls=["/evidence/kurti_listing_1.png", "/evidence/kurti_listing_2.png",
+                                    "/evidence/kurti_listing_3.png"],
+                size_chart_json={"S": "36", "M": "38", "L": "40"},
+                # golden fields distilled from the listing video: opaque, semi-matte woven RAYON.
+                quality_fingerprint_json={
+                    "attributes": {
+                        "weave_structure": "woven, medium plain weave",
+                        "surface_sheen": "semi-matte",
+                        "fibre_texture": "smooth, soft",
+                        "opacity": "opaque",
+                        "stitch_quality": "dense, even seams",
+                        "drape": "structured, holds shape",
+                        "embellishment_type": "thread embroidery yoke",
+                        "colour": "black", "shade": "jet black", "print_colourway": "white on black",
+                    },
+                    "summary": "Opaque, semi-matte woven rayon anarkali with an embroidered yoke — the Black variant.",
+                    "confidence": 0.86, "notes": ["listing video shows the Black colourway only"],
+                    "source_frames": 6,
+                }),
+        # 4. Size drift: brand runs small. FLAGGED as a size-drift case for the manager (advisory
+        #    — the sale continues); the buyer already gets the Agent-2 size hint in the cart.
         Product(id="prod_size_shoes", seller_id="seller_shoes",
                 title="Running Shoes - Lightweight", brand="StepUp", category="footwear",
-                price=1299, mrp=2499, images=["shoes.jpg"],
-                fabric_claim=None, status="active",
+                price=1299, mrp=1599, images=["shoes.jpg"],
+                fabric_claim=None, status="flagged",
                 size_chart_json={"7": "UK7", "8": "UK8", "9": "UK9"}),
-        # 5. Low-rated fraud cluster -> suspend (Phase 4 audit)
+        # 5. Low-rated fraud cluster -> already SUSPENDED by Agent 2 (fraud reviews, repeat-offender
+        #    seller). Pre-resolved so the manager queue shows a real suspension on first load, not
+        #    an egregious 1-star/1000-review listing sitting "active".
         Product(id="prod_lowrated_fraud", seller_id="seller_lowrated",
                 title="Wireless Neckband Earphones", brand="BargainBin", category="electronics",
-                price=699, mrp=2999, images=["earbuds.jpg"],
-                fabric_claim=None, status="active"),
-        # 6. Fixable gaps -> correction window (Phase 4 audit)
+                price=699, mrp=899, images=["earbuds.jpg"],
+                fabric_claim=None, status="suspended"),
+        # 6. Fixable gaps -> in a CORRECTION WINDOW (missing size chart, dominant size complaint).
+        #    Pre-resolved with a drafted fix waiting for the seller to approve (see seed actions).
         Product(id="prod_fixable_bedsheet", seller_id="seller_fixable",
                 title="Cotton Bedsheet Double", brand="HomeComfort", category="home",
-                price=549, mrp=1299, images=["bedsheet.jpg"],
-                fabric_claim="cotton", status="active",
+                price=549, mrp=699, images=["bedsheet.jpg"],
+                fabric_claim="cotton", status="correction_window",
                 size_chart_json=None),
         # 6b. Delivery-fault: a GOOD seller's product ruined by a bad courier -> Agent-2
         #     audit routes to logistics referral, NO seller-rating penalty (fairness rule).
         Product(id="prod_damaged_courier", seller_id="seller_shoes",
                 title="Cold-Pressed Juice 1L (Glass Bottle)", brand="StepUp", category="home",
-                price=299, mrp=699, images=["bottle.jpg"], fabric_claim=None, status="active"),
+                price=299, mrp=379, images=["bottle.jpg"], fabric_claim=None, status="active"),
         # 7. Loved knockoff: branded-style, far below MRP (counterfeit signal) BUT
         #    genuinely high trustworthy rating -> relabel_required, NOT a ban.
         Product(id="prod_knockoff_loved", seller_id="seller_knockoff",
                 title="Aviator Sunglasses (Rayban-inspired)", brand="Rayban", category="accessories",
                 price=499, mrp=7999, images=["aviator.jpg"],
-                fabric_claim=None, status="active"),
+                fabric_claim=None, status="active",
+                # real measurements: this listing's problem is the BRAND claim, not the spec —
+                # keep the measurement gap unique to prod_bag_combo.
+                size_chart_json={"Free Size": "Lens 58mm x Bridge 14mm x Temple 140mm"}),
         # benign filler (realistic catalog, no flags)
         Product(id="prod_normal_mug", seller_id="seller_viral",
                 title="Ceramic Coffee Mug 350ml", brand="TrendyThreads", category="home",
-                price=249, mrp=399, images=["mug.jpg"], fabric_claim=None, status="active"),
+                price=199, mrp=249, images=["mug.jpg"], fabric_claim="Ceramic", status="active"),
         # --- depth catalog (varied sellers / ratings / issues) ---
         Product(id="prod_gadget_powerbank", seller_id="seller_gadgets",
                 title="Wireless Charging Pad 15W", brand="TechBazaar", category="electronics",
-                price=1199, mrp=2499, images=["powerbank.jpg"], fabric_claim=None, status="active"),
+                price=1199, mrp=1499, images=["powerbank.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_gadget_earphones", seller_id="seller_gadgets",
                 title="Wireless Neckband Earphones (40h)", brand="TechBazaar", category="electronics",
-                price=899, mrp=1999, images=["earphones2.jpg"], fabric_claim=None, status="active"),
+                price=899, mrp=1099, images=["earphones2.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_beauty_serum", seller_id="seller_beauty",
                 title="Men's Face Moisturizer 200ml", brand="GlowUp", category="beauty",
-                price=349, mrp=799, images=["serum.jpg"], fabric_claim=None, status="active"),
+                price=349, mrp=449, images=["serum.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_beauty_lipstick", seller_id="seller_beauty",
                 title="Matte Liquid Lipstick Set of 5", brand="GlowUp", category="beauty",
-                price=449, mrp=1199, images=["lipstick.jpg"], fabric_claim=None, status="active"),
+                price=449, mrp=549, images=["lipstick.jpg"], fabric_claim=None, status="active"),
         Product(id="prod_kids_tshirt", seller_id="seller_kids",
                 title="Kids Polka-Dot Cotton Dress", brand="LittleStars", category="apparel",
-                price=299, mrp=699, images=["kids.jpg"], fabric_claim="cotton", status="active",
+                price=299, mrp=349, images=["kids.jpg"], fabric_claim="cotton", status="active",
                 size_chart_json=None),  # missing size chart -> Agent-2 flag
-        Product(id="prod_saree_silk", seller_id="seller_saree",
-                title="Banarasi Silk Saree with Blouse", brand="SilkTradition", category="apparel",
-                price=12999, mrp=24999, images=["saree.jpg"], fabric_claim="pure silk", status="active",
-                size_chart_json={"Free Size": "5.5m saree + 0.8m blouse"}),
         Product(id="prod_mobile_case", seller_id="seller_mobile",
                 title="Shockproof Phone Back Cover", brand="SmartWorld", category="electronics",
-                price=199, mrp=499, images=["case.jpg"], fabric_claim=None, status="active"),
+                price=199, mrp=249, images=["case.jpg"], fabric_claim=None, status="active"),
+        # MEASUREMENT GAP: a genuinely good bag (4.0★, honest seller) sold as "Free Size" with
+        # NO dimensions. Buyers can't tell how big it is, so a steady size-complaint minority
+        # runs through otherwise-happy reviews ("good quality but small size"). Nothing here is
+        # fraud — the fix is a spec, not a ban: the mandatory-fields gate asks for L x W x H.
+        # The vacuous {"Free Size": "Free Size"} chart is the defect itself, not an oversight.
+        Product(id="prod_bag_combo", seller_id="seller_bags",
+                title="Women's Handbag Combo - Tote, Sling & Purse (Pack of 4)",
+                brand="Aaraals", category="accessories",
+                price=325, mrp=399, images=["bag_combo.jpg"], fabric_claim="PU Leather",
+                # HELD for info: the size-complaint cluster + vacuous "Free Size" chart tripped
+                # the mandatory-fields gate. A dimensions fix is drafted (see seed actions) and
+                # waits for the seller — the remedy is a spec, not a suspension.
+                status="needs_info", size_chart_json={"Free Size": "Free Size"}),
         # already handled by Agent 2: quality-complaint cluster -> held for info (needs QC)
+        # priced like a real Meesho jewellery set (₹235) — at the old ₹699/₹2499 it read as
+        # 28% of MRP and tripped the counterfeit PRICE signal, which was a false positive.
         Product(id="prod_jewelry_necklace", seller_id="seller_jewelry",
                 title="Gold-Plated Kundan Necklace Set", brand="ShineOn", category="accessories",
-                price=699, mrp=2499, images=["necklace.jpg"], fabric_claim=None, status="needs_info"),
+                price=235, mrp=499, images=["necklace.jpg"], fabric_claim=None, status="needs_info",
+                size_chart_json={"Free Size": "Necklace 42cm + earrings 4cm"}),
         # already handled by Agent 1: a second counterfeit (branded watch far below MRP) -> LOCKED
         Product(id="prod_scam_watch", seller_id="seller_scam",
                 title="Luxury Chronograph Watch (Branded)", brand="Omega", category="watches",
@@ -201,12 +252,13 @@ def _seed(db):
         "Loved it, feels so premium and real",
         "Genuine product and super fast delivery",
     ]
-    for i in range(12):
+    for i in range(160):  # a big FAKE burst — the tell is that every account is 2–4 days old
         reviews.append(Review(id=f"rev_cf_{i}", product_id="prod_counterfeit_rolex",
-                              rating=5, text=cf_txt[i % len(cf_txt)], created_at=_dt(2),
-                              reviewer_account_age_days=2))
-    # viral honest: a GENUINELY viral product — 11k+ real buyers, 4.7★, growth spread
-    # over ~90 days from OLD/established accounts. High volume + high rating + NO
+                              rating=5, text=cf_txt[i % len(cf_txt)], created_at=_dt(1 + i % 3),
+                              reviewer_account_age_days=2 + i % 3))
+    # viral honest: a GENUINELY viral product — ~2.4k real buyers, 4.7★, growth spread
+    # over ~90 days from OLD/established accounts. Still clearly the catalogue's top seller
+    # (~4x the next product) without the cartoonish 11k. High volume + high rating + NO
     # new-account burst is exactly the honest-viral pattern Agent 1 must clear.
     vi_txt = [
         "Great fit, soft cotton, went viral on reels!",
@@ -217,24 +269,24 @@ def _seed(db):
         "Ordered 3 more for the family, superb",
         "Colour didn't fade after wash, happy",
     ]
-    for i in range(11200):
+    for i in range(2400):
         # ~4.8 avg: 80% five-star, 15% four, 5% three
         r = 5 if i % 20 < 16 else (4 if i % 20 < 19 else 3)
         reviews.append(Review(id=f"rev_vi_{i}", product_id="prod_viral_honest",
                               rating=r, text=vi_txt[i % len(vi_txt)],
                               created_at=_dt(1 + i % 90), reviewer_account_age_days=300 + (i % 900)))
-    # fabric kurti: negative cluster; two reviews carry videos (Phase 3 vision).
+    # fabric kurti: negative cluster; two reviews carry videos (vision path).
     # video_path points at a REAL review-video asset dropped into media/videos/
     # (or a frames/<dir> of stills). Left None until the physical recordings are
     # supplied; the vision tool then reports available=False and the agent decides
     # on the text signals alone — no fabricated evidence. Wire the filenames here.
     KURTI_VIDEO = {0: None, 3: None}  # e.g. {0: "kurti_review_synthetic_1.mp4", 3: "kurti_review_2.mp4"}
     kurti_neg = [
-        ("Fabric feels synthetic, not cotton at all", 2),
-        ("Shrank after first wash", 2),
-        ("Shiny polyester look, misleading listing", 1),
-        ("Not breathable, definitely not pure cotton", 2),
-        ("Color faded, cheap material", 2),
+        ("Transparent material, feels like crepe not rayon", 2),
+        ("See-through fabric, had to wear a slip under it", 2),
+        ("Shiny and thin, not the rayon shown in the listing", 1),
+        ("Cloth is sheer and slippery, misleading listing", 2),
+        ("Not the opaque rayon promised — disappointed", 2),
     ]
     for i, (t, r) in enumerate(kurti_neg):
         vpath = KURTI_VIDEO.get(i)
@@ -242,6 +294,40 @@ def _seed(db):
                               rating=r, text=t, created_at=_dt(10 + i),
                               reviewer_account_age_days=300,
                               has_video=(i in KURTI_VIDEO), video_path=vpath))
+    # ...plus a realistic base of reviews (a popular kurti has hundreds) — a strong
+    # fabric-complaint minority within the negatives keeps the advisory story intact.
+    ku_pos = ["Lovely kurti, good stitching", "Nice for daily wear", "Colour is pretty",
+              "Comfortable and value for money", "Fits well, happy with it"]
+    ku_neg = ["Fabric feels synthetic, not cotton", "Not pure cotton as claimed",
+              "Material is thin and shiny", "Shrank a little after wash"]
+    for i in range(330):
+        reviews.append(Review(id=f"rev_kup_{i}", product_id="prod_fabric_kurti",
+                              rating=5 if i % 3 else 4, text=ku_pos[i % 5],
+                              created_at=_dt(2 + i % 80), reviewer_account_age_days=280 + i % 400))
+    for i in range(55):  # the fabric-mismatch cluster (dominant NEGATIVE) -> advisory review
+        reviews.append(Review(id=f"rev_kun_{i}", product_id="prod_fabric_kurti",
+                              rating=2 if i % 4 else 1, text=ku_neg[i % 4],
+                              created_at=_dt(2 + i % 60), reviewer_account_age_days=290))
+    # bag combo: a GOOD product with a LISTING gap. The praise is real (build quality, price)
+    # and the seller is honest, so the trustworthy rating stays ~3.8 and NO delist tier trips.
+    # The recurring complaint is purely dimensional — buyers expected a bigger bag because the
+    # listing only ever said "Free Size". This is the case the mandatory-fields gate exists for:
+    # the remedy is measurements, not a suspension.
+    bag_pos = ["Good quality bag, worth the price", "Nice combo, all 4 pieces are useful",
+               "Stitching is neat, looks premium", "Colour exactly as shown, happy",
+               "Great value for a pack of 4"]
+    bag_size = ["Good quality but small size", "Bag is much smaller than it looks in the photo",
+                "Size not mentioned anywhere, turned out tiny", "Cute but too small for daily use",
+                "No measurements given, expected a bigger tote",
+                "Quality is fine, just smaller than I imagined"]
+    for i in range(210):
+        reviews.append(Review(id=f"rev_bag_{i}", product_id="prod_bag_combo",
+                              rating=5 if i % 3 else 4, text=bag_pos[i % 5],
+                              created_at=_dt(2 + i % 70), reviewer_account_age_days=260 + i % 500))
+    for i in range(90):  # the size-complaint minority -> 'missing_measurements' + size_issue
+        reviews.append(Review(id=f"rev_bagsz_{i}", product_id="prod_bag_combo",
+                              rating=2 if i % 3 else 1, text=bag_size[i % 6],
+                              created_at=_dt(2 + i % 65), reviewer_account_age_days=270 + i % 300))
     # low-rated fraud: many low reviews with fraud-y language
     fraud_txt = ["Fake product, not as described", "Scam, stopped working in a day",
                  "Counterfeit, avoid this seller", "Never delivered what was shown"]
@@ -254,10 +340,10 @@ def _seed(db):
     knock_txt = ["Looks exactly like the real ones, great value", "Solid build for the price",
                  "Everyone thinks they're original", "Good UV protection, happy with it",
                  "Not the real brand but excellent quality"]
-    for i in range(20):
+    for i in range(480):
         reviews.append(Review(id=f"rev_kn_{i}", product_id="prod_knockoff_loved",
                               rating=5 if i % 5 else 4, text=knock_txt[i % 5],
-                              created_at=_dt(i * 3), reviewer_account_age_days=200 + i * 15))
+                              created_at=_dt(i % 120), reviewer_account_age_days=200 + i % 700))
     # fixable: many mid reviews dominated by a SIZE complaint (missing size chart) ->
     # Agent-2 audit trips a delist tier and routes to correction_window + a fix draft.
     # 1000 recent established-account reviews at 2★ -> trustworthy ~2.0, trips <3.0/1000+.
@@ -289,34 +375,62 @@ def _seed(db):
                 id=f"rev_{sid}_{i}", product_id=pid, rating=rating_fn(i),
                 text=texts[i % len(texts)], created_at=_dt(day0 + i % day_mod),
                 reviewer_account_age_days=(age if age is not None else age0 + i * age_step)))
-    _add("prod_gadget_powerbank", "pb", 42, lambda i: 5 if i % 5 else 4, pos, 250)
-    _add("prod_gadget_earphones", "ep", 31, lambda i: 5 if i % 4 else 4, pos, 300, 7)
-    _add("prod_beauty_serum", "bs", 26, lambda i: 5 if i % 5 else 4, beauty_pos, 200, 10)
-    _add("prod_beauty_lipstick", "bl", 21, lambda i: 5 if i % 4 else 4, beauty_pos, 220, 9)
-    _add("prod_kids_tshirt", "kd", 18, lambda i: 4 if i % 3 else 5,
+    _add("prod_gadget_powerbank", "pb", 620, lambda i: 5 if i % 5 else 4, pos, 250, 1, day_mod=80)
+    _add("prod_gadget_earphones", "ep", 430, lambda i: 5 if i % 4 else 4, pos, 300, 1, day_mod=75)
+    _add("prod_beauty_serum", "bs", 540, lambda i: 5 if i % 5 else 4, beauty_pos, 200, 1, day_mod=70)
+    _add("prod_beauty_lipstick", "bl", 360, lambda i: 5 if i % 4 else 4, beauty_pos, 220, 1, day_mod=70)
+    _add("prod_kids_tshirt", "kd", 310, lambda i: 4 if i % 3 else 5,
          ["Soft cotton, kids love it", "Good fit for my 4yr old", "Nice print, washes well",
-          "Size ran a bit small", "Cute and comfortable"], 260, 12)
-    _add("prod_saree_silk", "sr", 22, lambda i: 4 if i % 2 else 5,
-         ["Beautiful saree, rich look", "Silk quality is good", "Loved the colour",
-          "Perfect for functions", "Slight colour variation but ok"], 280, 11)
-    _add("prod_mobile_case", "mc", 16, lambda i: 3 if i % 2 else 4,
+          "Size ran a bit small", "Cute and comfortable"], 260, 1, day_mod=75)
+    _add("prod_mobile_case", "mc", 200, lambda i: 3 if i % 2 else 4,
          ["Decent cover, fits well", "Ok for the price", "Average quality",
-          "Protects the phone fine", "Buttons a bit stiff"], 180, 9, day_mod=50)
+          "Protects the phone fine", "Buttons a bit stiff"], 180, 1, day_mod=60)
+    _add("prod_size_shoes", "sh", 460, lambda i: 5 if i % 3 else 4,
+         ["Super comfy, great for running", "True to size once adjusted", "Lightweight and durable",
+          "Good grip, value for money", "Nice colour, fits well"], 250, 1, day_mod=85)
+    _add("prod_normal_mug", "mg", 180, lambda i: 5 if i % 4 else 4,
+         ["Sturdy mug, nice finish", "Good size for chai", "Microwave safe, happy",
+          "Value for money", "Colour as shown"], 200, 1, day_mod=60)
     # jewelry: quality-complaint cluster -> Agent-2 correction/suspend candidate
     _add("prod_jewelry_necklace", "jw", 700, lambda i: 2 if i % 5 else 1,
          ["Gold plating faded in a week", "Turned black quickly, poor quality",
           "Looks cheap, not as pictured", "A stone fell off after one use"],
          0, day_mod=55, age=240)
     # scam watch: counterfeit burst (5-star from brand-new accounts, ₹799 'Omega')
-    _add("prod_scam_watch", "sw", 14, lambda i: 5,
+    _add("prod_scam_watch", "sw", 130, lambda i: 5,
          ["Best Omega copy, looks real!", "Amazing luxury watch so cheap",
-          "Genuine branded piece, wow", "Original quality, superb"], 0, day0=2, age=3)
+          "Genuine branded piece, wow", "Original quality, superb"], 0, day0=1, day_mod=3, age=3)
     # scam perfume: fraud cluster -> suspend candidate
     _add("prod_scam_perfume", "sp", 600, lambda i: 1,
          ["Fake, smells like spirit", "Not original, cheap knockoff",
           "Scam product, totally avoid", "Nothing like the brand claimed"],
          0, day_mod=50, age=150)
     db.add_all(reviews)
+
+    # ---- ratings_total: star ratings INCLUDING rating-only (no text) submissions ----
+    # Real listings carry ~3x more ratings than written reviews (7470/2425, 59385/20506,
+    # 11810/4218 all land near 2.9-3.1x), so the two numbers must differ on screen. The
+    # multiplier is deterministic per product id — same catalogue every reseed.
+    _counts: dict[str, int] = {}
+    for r in reviews:
+        _counts[r.product_id] = _counts.get(r.product_id, 0) + 1
+    for p in products:
+        n = _counts.get(p.id, 0)
+        # 2.8x-3.1x, varied per product so the catalogue doesn't read as one formula
+        p.ratings_total = round(n * (2.8 + (sum(map(ord, p.id)) % 4) / 10)) if n else 0
+
+    # ---------- PRODUCT VARIANTS (colourways) ----------
+    # The kurti is sold in 3 colours; the seller filmed the BLACK one (is_listing_reference).
+    # The fabric-dispute order below ships the BLUE variant -> a CROSS-VARIANT media check,
+    # the exact case that must NOT be false-flagged on colour.
+    db.add_all([
+        ProductVariant(id="var_kurti_black", product_id="prod_fabric_kurti", name="Black",
+                       colour="black", images=["kurti.jpg"], is_listing_reference=True),
+        ProductVariant(id="var_kurti_blue", product_id="prod_fabric_kurti", name="Blue",
+                       colour="blue", images=["kurti.jpg"]),
+        ProductVariant(id="var_kurti_red", product_id="prod_fabric_kurti", name="Red",
+                       colour="red", images=["kurti.jpg"]),
+    ])
 
     # ---------- BUYERS ----------
     db.add_all([
@@ -338,22 +452,49 @@ def _seed(db):
     ])
 
     # ---------- ORDERS ----------
+    # Three DISTINCT fraud/complaint scenarios, each on its own product so they don't blur:
+    #   1. GENUINE complaint  — buyer_normal, kurti fabric mismatch  -> manager upholds, refund
+    #   2. REPEAT-CLAIM fraud  — serial claimer, a CLEAN serum       -> manual review, manager rejects
+    #   3. HUB / OTP fraud     — buyer_normal, a powerbank           -> refund fast-track + hub escalation
     orders = [
-        # multi-item, single OTP scan, hub anomaly, no geo-photo, routed via the faulty
-        # hub -> refund fast-track (two independent signals) + hub escalation.
-        Order(id="order_otp_dispute", buyer_id="buyer_normal", product_id="prod_size_shoes",
+        # 2. REPEAT CLAIMANT: a well-rated serum, correctly described + delivered (no real issue).
+        #    The serial claimer (7 prior claims) files anyway -> routed to MANUAL REVIEW so the
+        #    manager can reject the fraudulent refund. Pre-set to manual_review so it shows on load.
+        Order(id="order_serial", buyer_id="buyer_serial_claimer", product_id="prod_beauty_serum",
+              claim_type="item_not_as_described",
+              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(2),
+              hub_anomaly_flag=False, geo_photo_verified=True, status="manual_review"),
+        # 3. HUB / OTP FRAUD: 3 items ordered, only 1 OTP scanned, routed via the FAULTY hub with
+        #    no geo-photo -> two independent signals -> refund fast-track + immediate hub escalation.
+        Order(id="order_otp_dispute", buyer_id="buyer_normal", product_id="prod_gadget_powerbank",
               hub_id="hub_faulty", otp_scan_count=1, items_count=3, delivered_at=_dt(1),
               hub_anomaly_flag=True, geo_photo_verified=False, status="delivered"),
-        # serial claimer order -> manual review (routed via a clean hub)
-        Order(id="order_serial", buyer_id="buyer_serial_claimer", product_id="prod_fabric_kurti",
-              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(1),
-              hub_anomaly_flag=False, geo_photo_verified=True, status="delivered"),
-        # clean buyer, material dispute ("received synthetic, not cotton") WITH photo/video
-        # evidence -> hybrid check_media_evidence -> ADVISORY recommend_review to the manager.
-        # buyer_evidence_json holds media paths; left empty until real buyer media is supplied.
+        # 1. clean buyer, material dispute ("received synthetic, not cotton") on the BLUE variant,
+        # WITH photo/video evidence. The listing video shows BLACK -> a cross-variant media
+        # check: the quality-fingerprint diff must ignore colour and judge only weave/sheen/
+        # texture -> ADVISORY recommend_review to the manager, NOT a colour false-flag.
+        # buyer_evidence_json holds media paths; left empty until real buyer media is supplied
+        # (the fingerprint diff then reports "not comparable" rather than fabricating a verdict).
         Order(id="order_fabric_dispute", buyer_id="buyer_normal", product_id="prod_fabric_kurti",
-              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(2),
-              hub_anomaly_flag=False, geo_photo_verified=True, buyer_evidence_json=[],
+              variant_id="var_kurti_blue", claim_type="fabric_mismatch",
+              hub_id="hub_normal", otp_scan_count=1, items_count=1, delivered_at=_dt(1),
+              hub_anomaly_flag=False, geo_photo_verified=True,
+              # the buyer's real photos of the BLUE kurti they received (sheer/crepe).
+              buyer_evidence_json=["/evidence/kurti_buyer_1.png", "/evidence/kurti_buyer_2.png"],
+              # pre-read observed attributes (deterministic demo): the received item is SHEER and
+              # GLOSSY — reads as crepe, not the opaque rayon claimed. Colour differs (blue vs the
+              # filmed black) but that is IGNORED; opacity + sheen + drape are what diverge.
+              buyer_evidence_fingerprint_json={
+                  "weave_structure": "woven, loose",
+                  "surface_sheen": "glossy",
+                  "fibre_texture": "slippery, smooth",
+                  "opacity": "semi-sheer, see-through",
+                  "stitch_quality": "even seams",
+                  "drape": "fluid, clingy",
+                  "embellishment_type": "thread embroidery yoke",
+                  "colour": "blue", "shade": "teal blue", "print_colourway": "white on blue",
+                  "_summary": "Sheer, glossy, fluid fabric that reads as crepe — see-through against the light.",
+              },
               status="delivered"),
     ]
     # Order volume for the counterfeit so it clears the confidence floor
@@ -379,7 +520,6 @@ def _seed(db):
     ])
 
     # ---------- NOTIFICATIONS (role-wise inbox: seller / manager / buyer) ----------
-    from .models import Notification
 
     def _ntf(nid, audience, recipient, subject, body, priority="normal", related=None, days=1):
         return Notification(id=nid, audience=audience, recipient_id=recipient, subject=subject,
@@ -440,7 +580,7 @@ def _seed(db):
 
     db.add_all([
         _inv("inv_h1", "prod_scam_watch", None, "pre_purchase", "counterfeit_lock", "lock", 0.98,
-             ["'Omega' priced at 0.18% of MRP (< 35%)", "14 five-star reviews, 100% from 3-day-old accounts",
+             ["'Omega' priced at 0.18% of MRP (< 35%)", "130 five-star reviews, 100% from 3-day-old accounts",
               "seller MegaDiscount Hub is 15 days old with 8 open cases"],
              "This branded watch was locked — the price and review pattern indicate a counterfeit.", 2),
         _inv("inv_h2", "prod_size_shoes", "order_otp_dispute", "post_delivery", "refund_fast_track", "refund", 0.95,
@@ -473,4 +613,42 @@ def _seed(db):
              ["gold-plating quality complaints", "trustworthy rating < 3.0"], 2),
         _act("act_h3", "prod_scam_perfume", "suspend", "delist_suspend",
              ["fraud-review cluster (600 x 1-star)", "seller flagged, 8 cases"], 2),
+        # pre-resolved Agent-2 outcomes so the manager queue + product pages read as a running
+        # marketplace on first load (not everything "active"). Reasons match evaluate_delisting.
+        _act("act_h4", "prod_lowrated_fraud", "suspend", "delist_suspend",
+             ["fraud/quality cluster (1000 x 1-star, 100% agree)", "repeat-offender seller (5 cases)"], 3),
+        _act("act_h5", "prod_fixable_bedsheet", "correction", "correction_window",
+             ["dominant complaint: missing size chart", "trustworthy ~2.0 over 1000 reviews"], 3),
+        _act("act_h6", "prod_bag_combo", "hold", "needs_info",
+             ["listing sold as ‘Free Size’ with NO measurements", "size-complaint cluster (90 reviews)"], 2),
+        # size-drift case for the manager (advisory): the shoes run small — buyers get the hint
+        # in the cart; the manager can ask the seller to update the sizing.
+        _act("act_h7", "prod_size_shoes", "recommend_review", "size_drift",
+             ["StepUp footwear runs 1 size small (214 returns)",
+              "Agent 2 recommends the seller update the sizing information"], 1),
+    ])
+
+    # ---- pre-seeded fix DRAFTS (Agent 2's proposed corrections, awaiting seller approval) ----
+    # So the seller "Suggested fixes" console has real before/after content on first load, and
+    # the manager sees corrections in flight. Same shape agent2.draft_fix produces at runtime.
+    def _draft(aid, product_id, field, cluster, summary, before, after, rationale, days):
+        return CatalogAction(
+            id=aid, product_id=product_id, action="fix_draft", seller_approved=False,
+            created_at=_dt(days),
+            evidence_json={"field": field, "cluster": cluster, "summary": summary,
+                           "before": before, "after": after, "rationale": rationale})
+
+    db.add_all([
+        _draft("draft_bedsheet", "prod_fixable_bedsheet", "size_chart_json", "size_issue",
+               "Add the missing size chart buyers keep asking for",
+               {"size_chart_json": None},
+               {"size_chart_json": {"Single": "60 in x 90 in", "Double": "90 in x 100 in",
+                                    "King": "100 in x 108 in"}},
+               "Buyers repeatedly report ordering the wrong size — a measurement chart removes the guesswork.", 3),
+        _draft("draft_bag", "prod_bag_combo", "size_chart_json", "size_issue",
+               "Replace ‘Free Size’ with real bag dimensions",
+               {"size_chart_json": {"Free Size": "Free Size"}},
+               {"size_chart_json": {"Tote": "L 30cm x W 12cm x H 26cm", "Sling": "L 22cm x W 8cm x H 16cm",
+                                    "Purse": "L 19cm x W 3cm x H 10cm"}},
+               "The ‘small size’ complaints come from a listing that never stated dimensions — add L x W x H.", 2),
     ])
