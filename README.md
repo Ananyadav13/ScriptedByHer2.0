@@ -2,14 +2,25 @@
 
 Two agentic AI systems for a Meesho-style marketplace that **act on evidence, not just flag it**.
 
-- **Agent 1 — Verification & Authenticity.** Investigates a product or a delivery dispute the moment a buyer doubts it. It runs deterministic risk tools, reasons over the numbers, and then *executes* a graduated action — lock, request a quality-check video, relabel, hold, refund, or clear.
+- **Agent 1 — Verification & Authenticity**, called **Trusty** in the product UI. Investigates a product or a delivery dispute the moment a buyer doubts it. It runs deterministic risk tools, reasons over the numbers, and then *executes* a graduated action — lock, request a quality-check video, relabel, hold, refund, or clear.
 - **Agent 2 — Listing & Catalog Integrity.** Continuously audits the catalog for misleading listings, clusters what buyers actually complain about, and **drafts the correction** for the seller to approve.
 
 The guiding principle, encoded throughout: **authenticity matters, but not at the cost of the buyer or seller community.** A counterfeit people regret gets locked. A knockoff people knowingly love gets relabeled, not banned. Nothing punitive happens on thin evidence, and every uncertain call routes to a human manager.
 
 Built for ScriptedBy{Her} 2.0 (Round 3).
 
-> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop run end to end. 120 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
+## Try it live
+
+| | |
+| --- | --- |
+| **Live app** | https://scripted-by-her2-0.vercel.app |
+| **Live API** | https://scriptedbyher2-0.onrender.com — [interactive docs](https://scriptedbyher2-0.onrender.com/docs) |
+
+Start at [**/demo**](https://scripted-by-her2-0.vercel.app/demo) for the guided two-journey walkthrough.
+The API is on Render's free tier and sleeps when idle, so the first request may take up to a minute to
+wake it; everything after that is fast.
+
+> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop execute the complete workflow end to end. 127 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
 
 ---
 
@@ -145,10 +156,10 @@ Seeded fresh on every boot from `backend/app/seed.py`:
 
 | Entity | Count |
 | --- | --- |
-| Products | **19** across 7 categories (apparel, watches, beauty, electronics, footwear, home, accessories) |
-| Sellers | 14 — spanning honest, sloppy, and outright fraudulent trust profiles |
+| Products | **20** across 7 categories (apparel, watches, beauty, electronics, footwear, home, accessories) |
+| Sellers | 15 — spanning honest, sloppy, and outright fraudulent trust profiles |
 | Business managers | 3 (North / South / West zones) |
-| Reviews | ~11,000, with realistic account-age and recency distributions |
+| Reviews | **12,610**, with realistic account-age and recency distributions |
 | Orders | 49 |
 | Buyers | 2 (`buyer_normal`, `buyer_serial_claimer`) |
 | Delivery hubs | 2 (one with a repeat-fraud pattern) |
@@ -163,7 +174,7 @@ IDs are stable and load-bearing: the frontend scenario buttons and the tests ref
 ```
 ┌─────────────────────────────┐         ┌──────────────────────────────────┐
 │  Next.js 16 (App Router)    │  HTTP   │  FastAPI                         │
-│  React 19 · Tailwind v4     │────────▶│  27 endpoints                    │
+│  React 19 · Tailwind v4     │────────▶│  31 API operations               │
 │                             │         │                                  │
 │  buyer · seller · manager   │◀────────│  ┌────────────────────────────┐  │
 │  · agent consoles · admin   │   SSE   │  │ Agent 1  orchestrator      │  │
@@ -339,7 +350,7 @@ All of the above is covered by `tests/test_state_integrity.py` (22 tests), which
 │   │   ├── idempotency.py     # deterministic keys — one audit row per event
 │   │   ├── logging_config.py  # console + rotating file logs, moderation events
 │   │   └── main.py            # app factory, CORS, lifespan
-│   ├── tests/                 # 120 tests
+│   ├── tests/                 # 127 tests
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
@@ -365,16 +376,19 @@ All of the above is covered by `tests/test_state_integrity.py` (22 tests), which
 ```bash
 cd backend
 .venv\Scripts\activate          # source .venv/bin/activate on macOS/Linux
-pytest                          # 120 tests
+pytest                          # 127 tests
 pytest -v                       # per-test names
 pytest tests/test_api_smoke.py  # API layer only
 ```
 
-Three layers:
+Six groups, 127 in total:
 
 - **Unit tests (66)** cover every deterministic decision rule — risk checks (13), delisting tiers (14), the quality-fingerprint diff (13), the mandatory-field gate (12), fit prediction (9), tripwires (5). They use lightweight object stand-ins, so they run in seconds with no database and no API key.
 - **API smoke tests (16)** drive the real app through FastAPI's `TestClient`: health, catalog browsing, the seller listing gate, the manager queue and decisions (including the cross-manager 403), buyer dispute intake, dispute resolution, notifications, and both agent surfaces.
 - **State-integrity tests (22)** lock in idempotency (repeated and concurrent agent runs write one audit row, not twelve), endpoint validation, legal state transitions, and the governance rule that a manager decision cannot be bypassed.
+- **Media / listing-video tests (9)** cover the live extraction path, including the quota-failure
+  case and a check that the flagship dispute still resolves correctly afterwards.
+- **Delist-endpoint tests (7)** enforce the delisting tiers at the API boundary.
 - **Drift tests (7)** enforce that `rules.py` really is the source of truth: every constant is consumed by real code, and no threshold is hardcoded in the prompts — the agent's instructions and the deterministic engine cannot silently diverge.
 
 The tests run **fully offline**. Every LLM entry point is stubbed, and `tests/conftest.py` redirects `DATABASE_URL` to a dedicated `test_build_trust.db` before the app is imported — so running the suite never touches your working database.
@@ -398,6 +412,7 @@ npm run lint        # eslint
 
 **Infrastructure** — SQLite · Docker + Docker Compose
 
+Licensed under the MIT License — see [LICENSE](LICENSE).
 Full dependency credits: [ATTRIBUTION.md](ATTRIBUTION.md). Product decisions and their rationale: [ASSUMPTIONS.md](ASSUMPTIONS.md).
 
 ---
@@ -411,6 +426,10 @@ Honest scope notes for reviewers:
 - **Single-process only.** SSE trace events are held in in-memory queues (`app/agents/events.py`), so the API must run with one worker. Horizontal scaling requires a shared broker for those events first.
 - **No rate limiting.** `/investigate` and `/dispute` each start a background LLM loop and are unauthenticated — fine behind a demo URL, not on the open internet.
 - **Media reads are seeded by default.** The listing/buyer attribute reads are pre-extracted into `seed.py` for a deterministic, zero-quota demo, and no video ships with the repo — but the extraction runs live on demand via the walkthrough's video upload. The deterministic diff that produces the verdict is never seeded. See [Media pipeline](#media-pipeline-what-runs-live-and-what-is-pre-extracted).
+- **Buyer-uploaded dispute media leaves the system.** Photos and video a buyer attaches to a dispute
+  are sent to an external vision model (Gemini) for attribute extraction, and are used only to
+  investigate that dispute. A production deployment would need explicit buyer consent at upload and a
+  retention policy; neither is implemented here.
 - **Media evidence is advisory by design.** Lighting, wear, and angle make it uncertain, so it never auto-punishes — it routes to a human.
 - **Seeded demo data.** Reviews and orders are synthetic, generated to exercise each decision path.
 - **Gemini free tier.** Daily quota is limited, hence the API-key pool with rotation. Every deterministic surface works without a key.

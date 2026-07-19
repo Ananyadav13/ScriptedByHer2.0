@@ -382,8 +382,8 @@ def s02_problem(prs):
 def s03_built(prs):
     s = slide_light(prs, page=3)
     heading(s, "What We Built", "Two Agents, Three Consoles, One Auditable Trail",
-            sub="Not a mockup. A deployed full-stack application where both agents run for real, take "
-                "graduated action, and write an audit row for everything they do.")
+            sub="Not a mockup. A deployed full-stack application where both agents execute the complete "
+                "workflow end to end, take graduated action, and write an audit row for everything they do.")
 
     card(s, ML, Inches(2.42), Inches(5.7), Inches(2.62), "Agent 1  —  Verification & Authenticity",
          ["On-demand investigation. Fires when a buyer hits Buy Now, when a deterministic tripwire "

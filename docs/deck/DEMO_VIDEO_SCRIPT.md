@@ -1,6 +1,7 @@
 # Build Trust — Demo Video Script
 
-**Target length:** 3:00 (hard cap). Timings below total 2:58, leaving a breath at the end.
+**Target length:** 3:00. Timings below total 2:58, leaving a breath at the end.
+**Numbers, verified:** 127 tests · 31 API operations · 20 products · 15 sellers · 12,610 reviews.
 **Recording against:** the deployed app — https://scripted-by-her2-0.vercel.app
 
 ---
@@ -55,7 +56,7 @@
 
 **On screen:** Agent 1 trace panel — let the SSE steps stream. **Do not cut away.** Let each tool call land visibly.
 
-> Agent 1 picks it up and you can watch it work. Delivery signals first — was the OTP scanned for the
+> Agent 1 — Trusty, in the app — picks it up and you can watch it work. Delivery signals first — was the OTP scanned for the
 > right number of items, is this hub flagged, is this buyer a serial claimer. Then it compares the
 > seller's listing video against my photos.
 >

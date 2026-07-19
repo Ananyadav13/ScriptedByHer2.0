@@ -19,7 +19,7 @@ Build Trust — Agentic AI for Authenticity & Catalog Integrity
 **Build Trust** is a working marketplace with two autonomous AI agents underneath it, built to act on
 evidence rather than route buyers into a support queue. It is deployed and running end to end.
 
-**Agent 1 — Verification & Authenticity.** Fires when a buyer hits Buy Now, when a deterministic
+**Agent 1 — Verification & Authenticity**, called **Trusty** in the product UI. Fires when a buyer hits Buy Now, when a deterministic
 tripwire trips, or when a post-delivery dispute is filed. It runs four evidence tools — catalog risk,
 seller profile, delivery signals, and a variant-aware media comparison — reasons over the numbers in a
 streaming function-calling loop, and then *executes* a graduated action: clear, notify, relabel, request
@@ -50,7 +50,8 @@ the final call and may only act on their own sellers, enforced server-side.
 12,610 reviews generated to exercise every decision path.
 
 **Honest scope:** no authentication, SQLite rather than Postgres, single-process SSE, and synthetic seed
-data. These are stated plainly in the deck rather than papered over.
+data. These are stated plainly in the deck rather than papered over. Buyer-uploaded dispute media is sent
+to an external vision model for attribute extraction, used only to investigate that dispute. MIT licensed.
 
 ---
 
@@ -76,7 +77,7 @@ https://scripted-by-her2-0.vercel.app
 ## Repository URL
 
 ```
-<your GitHub repo URL>
+https://github.com/Ananyadav13/ScriptedByHer2.0
 ```
 
 ---
@@ -150,7 +151,9 @@ media dispute).
 From `docs/screenshots/` — recommended order:
 
 1. `01-landing.png` — buyer storefront
-2. `06-agent1-console.png` — Agent 1 evidence + live trace
-3. `05-agent2-catalog.png` — Agent 2 catalog audit
-4. `07-manager-sellers.png` — manager decision queue
-5. `08-seller-portal.png` — seller portal with the drafted fix
+2. `theAgent1result.png` — Trusty's verdict, with colour/shade/print stamped "ignored"
+3. `10-theAgentinAction.png` — the live investigation trace mid-run
+4. `theGuidedWalkthroughSeller-2.png` — Agent 2 audit, discrepancies by cause
+5. `07-manager-sellers.png` — the manager decision queue
+
+(the newer wide captures read far better as thumbnails than the original tall crops)
