@@ -417,6 +417,34 @@ Full dependency credits: [ATTRIBUTION.md](ATTRIBUTION.md). Product decisions and
 
 ---
 
+## Measured throughput
+
+The scalability question for this design isn't "how fast is the LLM" — the model is called
+once per investigation, on demand. It's how much catalog the **deterministic** layer can
+sweep, because Agent 2's audit and Agent 1's tripwires run over every listing continuously
+with no model in the path.
+
+Measured on one laptop core (`python scripts/benchmark.py`, 20,000 iterations per stage,
+200-review products — no network, no DB, no API key):
+
+| Stage | Throughput | p95 |
+| --- | --- | --- |
+| Delisting tier evaluation | 1,954,346 /s | 0.7 µs |
+| Price-vs-MRP check | 644,490 /s | 1.5 µs |
+| Quality-fingerprint diff | 167,187 /s | 7.3 µs |
+| Review-burst detection | 26,276 /s | 49.7 µs |
+| Trustworthy rating | 24,001 /s | 55.0 µs |
+
+The slowest stage bounds a full sweep: **~42 s of single-core CPU per 1M listings, ~7 min
+per 10M.** Listings are independent, so this divides across cores and workers — the audit is
+embarrassingly parallel. The LLM cost does not scale with catalog size; it scales with the
+number of *disputes*, which is orders of magnitude smaller.
+
+What this does **not** measure: the API layer under concurrent load, which is bounded by the
+single-worker SSE constraint described below, not by the decision logic.
+
+---
+
 ## Limitations
 
 Honest scope notes for reviewers:
