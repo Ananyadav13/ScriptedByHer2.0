@@ -37,3 +37,9 @@ PROGRESS.md
 # Large media (keep frames fallback + official_images tracked; ignore raw videos)
 backend/media/videos/*.mp4
 backend/media/videos/*.mov
+
+# Submission staging — generated upload artifacts (deck, 6 MB source zip, copied
+# snapshots). Everything here is rebuilt by docs/deck/build_deck.py from tracked
+# sources, so the outputs themselves do not belong in git.
+submission/
+Build_Trust_Prototype_Submission.pptx
