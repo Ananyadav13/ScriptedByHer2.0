@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, type Agent1Evidence, type InvestigationSummary } from "@/lib/api";
 import { decisionMeta, toolMeta } from "@/lib/decisions";
@@ -77,6 +77,7 @@ function CaseCard({ c }: { c: InvestigationSummary }) {
 export default function Agent1Page() {
   const [cases, setCases] = useState<InvestigationSummary[] | null>(null);
   const [showTech, setShowTech] = useState(false);
+  const techRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<Scn>(SCENARIOS[0]);
   const [evidence, setEvidence] = useState<Agent1Evidence | null>(null);
 
@@ -160,8 +161,24 @@ export default function Agent1Page() {
       {/* PRIMARY: cases resolved */}
       <div className="mb-4 flex items-center justify-between">
         <h2 className="font-semibold text-ink">Recent cases</h2>
-        <Button variant="secondary" size="sm" onClick={() => setShowTech((v) => !v)}>
-          🔧 {showTech ? "Hide" : "Show"} live investigation & backend evidence
+        {/* The panel this reveals renders BELOW the full case grid, so on a normal screen
+            it opened entirely off-screen and the button looked dead. Scroll to it. */}
+        <Button
+          variant="secondary"
+          size="sm"
+          aria-expanded={showTech}
+          aria-controls="agent1-tech-panel"
+          onClick={() => {
+            const next = !showTech;
+            setShowTech(next);
+            if (next) {
+              requestAnimationFrame(() =>
+                techRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }),
+              );
+            }
+          }}
+        >
+          🔧 {showTech ? "Hide" : "Show"} live investigation &amp; backend evidence
         </Button>
       </div>
 
@@ -179,7 +196,7 @@ export default function Agent1Page() {
 
       {/* SECONDARY (toggle): the technical / backend view for judges */}
       {showTech && (
-        <div className="mt-8 rounded-2xl border border-line bg-[#fbfbfe] p-5">
+        <div id="agent1-tech-panel" ref={techRef} className="mt-8 scroll-mt-20 rounded-2xl border border-line bg-[#fbfbfe] p-5">
           <div className="mb-4 text-sm font-semibold text-brand-ink">🔧 How Agent 1 works — live</div>
           <div className="mb-5 grid gap-4 md:grid-cols-3">
             <Card className="p-4">

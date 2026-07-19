@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { api, type Verdict } from "@/lib/api";
 import { decisionMeta, isBlocking } from "@/lib/decisions";
 import { Button } from "@/components/ui";
+import { addToCart, clearCart } from "@/lib/cart";
 import { TracePanel } from "@/components/TracePanel";
 
 // "Buy Now / Add to Cart" runs Agent 1 first (the agent fires on BUY NOW),
@@ -12,11 +13,15 @@ import { TracePanel } from "@/components/TracePanel";
 export function BuyFlowModal({
   productId,
   title,
+  price,
+  brand,
   mode,
   onClose,
 }: {
   productId: string;
   title: string;
+  price?: number | null;
+  brand?: string | null;
   mode: "cart" | "buy";
   onClose: () => void;
 }) {
@@ -29,8 +34,15 @@ export function BuyFlowModal({
   const dm = verdict ? decisionMeta(verdict.decision) : null;
 
   const proceed = () => {
+    // Actually put it in the cart. This screen used to say "Added to your cart" while
+    // storing nothing, so the cart page showed the same hardcoded product regardless.
+    if (mode === "cart") {
+      addToCart({ product_id: productId, title, price: price ?? null, brand });
+      setTimeout(() => router.push("/cart"), 1200);
+    } else {
+      clearCart();   // a completed order empties the cart
+    }
     setDone(true);
-    if (mode === "cart") setTimeout(() => router.push("/cart"), 1200);
   };
 
   return (

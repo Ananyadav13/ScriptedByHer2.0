@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { cartCount, useCart } from "@/lib/cart";
 
 // How long a dropdown stays open after the pointer leaves it. Long enough that the small
 // visual gap between the trigger and the panel (the `mt-1`) never closes the menu before
@@ -45,6 +46,7 @@ export function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState<string | null>(null);
   const [lastPath, setLastPath] = useState(pathname);
+  const count = cartCount(useCart());
   const navRef = useRef<HTMLElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -187,11 +189,18 @@ export function Nav() {
                     href={i.href}
                     role="menuitem"
                     onClick={closeNow}
-                    className={`block px-3.5 py-2 text-sm transition focus-visible:outline-none focus-visible:bg-brand-wash ${
+                    className={`flex items-center justify-between gap-3 px-3.5 py-2 text-sm transition focus-visible:outline-none focus-visible:bg-brand-wash ${
                       pathname === i.href ? "bg-brand-wash font-medium text-brand-ink" : "text-ink-soft hover:bg-[#f5f3f9]"
                     }`}
                   >
                     {i.label}
+                    {/* Immediate confirmation that "Add to Cart" did something — the count
+                        updates the moment an item is stored, from any page. */}
+                    {i.href === "/cart" && count > 0 && (
+                      <span className="grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1.5 text-[11px] font-semibold text-white">
+                        {count}
+                      </span>
+                    )}
                   </Link>
                 ))}
               </div>

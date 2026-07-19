@@ -434,7 +434,14 @@ export function ProductView({ detail: p }: { detail: ProductDetail }) {
       </div>
 
       {buyMode && (
-        <BuyFlowModal productId={p.id} title={p.title} mode={buyMode} onClose={() => setBuyMode(null)} />
+        <BuyFlowModal
+          productId={p.id}
+          title={p.title}
+          price={p.price}
+          brand={p.brand}
+          mode={buyMode}
+          onClose={() => setBuyMode(null)}
+        />
       )}
     </div>
   );
