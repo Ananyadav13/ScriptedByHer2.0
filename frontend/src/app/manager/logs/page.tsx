@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, type AdminAction, type ManagerInfo } from "@/lib/api";
 import { Badge, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
@@ -35,20 +35,31 @@ function actionLabel(action: string): { text: string; tone: "rose" | "amber" | "
 export default function ManagerLogs() {
   const [managers, setManagers] = useState<ManagerInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [rows, setRows] = useState<AdminAction[] | null>(null);
+  // Rows are stored with the manager they belong to, so "loading" is derivable and the
+  // view can never render one manager's log under another's name.
+  const [rows, setRows] = useState<{ managerId: string; actions: AdminAction[] } | null>(null);
+  const visible = rows?.managerId === active ? rows.actions : null;
 
   useEffect(() => {
     api.managers().then((ms) => { setManagers(ms); setActive(ms[0]?.id ?? null); }).catch(() => setManagers([]));
   }, []);
 
-  const load = useCallback(async (id: string) => {
-    setRows(null);
-    const [a, s] = await Promise.allSettled([api.adminActions(300), api.managerSellers(id)]);
-    const mine = new Set(s.status === "fulfilled" ? s.value.sellers.map((x) => x.seller_id) : []);
-    setRows(a.status === "fulfilled" ? a.value.actions.filter((x) => x.seller_id && mine.has(x.seller_id)) : []);
-  }, []);
-
-  useEffect(() => { if (active) load(active); }, [active, load]);
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    (async () => {
+      const [a, s] = await Promise.allSettled([api.adminActions(300), api.managerSellers(active)]);
+      if (cancelled) return;   // manager switched while these were in flight
+      const mine = new Set(s.status === "fulfilled" ? s.value.sellers.map((x) => x.seller_id) : []);
+      setRows({
+        managerId: active,
+        actions: a.status === "fulfilled"
+          ? a.value.actions.filter((x) => x.seller_id && mine.has(x.seller_id))
+          : [],
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [active]);
 
   return (
     <Page>
@@ -75,13 +86,13 @@ export default function ManagerLogs() {
         </Link>
       </div>
 
-      {rows === null ? (
+      {visible === null ? (
         <Spinner />
-      ) : rows.length === 0 ? (
+      ) : visible.length === 0 ? (
         <Empty>No recorded actions yet.</Empty>
       ) : (
         <Card className="divide-y divide-line p-0">
-          {rows.map((a) => {
+          {visible.map((a) => {
             const al = actionLabel(a.action);
             const comment = (a as unknown as { comment?: string }).comment;
             return (

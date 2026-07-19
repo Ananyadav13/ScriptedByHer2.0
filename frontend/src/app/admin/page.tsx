@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   api,
@@ -103,22 +103,24 @@ export default function AdminPage() {
   const [filter, setFilter] = useState("all");
   const [running, setRunning] = useState(false);
 
-  const load = useCallback(async () => {
-    const [f, a] = await Promise.allSettled([api.agent2Findings(), api.adminActions(40)]);
-    if (f.status === "fulfilled") setFindings(f.value);
-    else setFindings({ summary: {}, count: 0, products: [] });
-    if (a.status === "fulfilled") setActions(a.value.actions);
-  }, []);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    (async () => {
+      const [f, a] = await Promise.allSettled([api.agent2Findings(), api.adminActions(40)]);
+      if (cancelled) return;
+      setFindings(f.status === "fulfilled" ? f.value : { summary: {}, count: 0, products: [] });
+      if (a.status === "fulfilled") setActions(a.value.actions);
+    })();
+    return () => { cancelled = true; };
+  }, [reloadToken]);
 
   const runAudit = async () => {
     setRunning(true);
     try {
       setAudit(await api.audit(false));
-      await load();
+      setReloadToken((t) => t + 1);
     } finally {
       setRunning(false);
     }

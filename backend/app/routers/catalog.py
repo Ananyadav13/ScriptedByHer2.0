@@ -24,7 +24,8 @@ from sqlalchemy.orm import Session
 from ..agents import agent2, events
 from ..agents.orchestrator import run_investigation
 from ..db import get_db
-from ..models import CatalogAction, Investigation, Manager, Notification, Product, SizeDrift
+from ..idempotency import log_action_once, notify_once
+from ..models import CatalogAction, Investigation, Manager, Product, SizeDrift
 from ..services import delisting, fit_prediction, mandatory_fields, tripwires
 from ..time_utils import utcnow
 
@@ -35,19 +36,21 @@ router = APIRouter(tags=["catalog"])
 
 def _notify(db: Session, audience: str, subject: str, body: str,
             priority: str = "normal", related_id: str | None = None) -> None:
-    db.add(Notification(
-        id=f"ntf_{uuid.uuid4().hex[:12]}", audience=audience, subject=subject,
-        body=body, priority=priority, related_id=related_id, created_at=utcnow(),
-    ))
+    """At most one such message per case — see `app/idempotency.py`."""
+    notify_once(db, audience, subject, body, priority, related_id)
 
 
-def _log(db: Session, product_id: str, action: str, evidence: dict) -> CatalogAction:
-    row = CatalogAction(
-        id=f"act_{uuid.uuid4().hex[:12]}", product_id=product_id, action=action,
-        evidence_json=evidence, seller_approved=False, created_at=utcnow(),
-    )
-    db.add(row)
-    return row
+def _log(db: Session, product_id: str, action: str, evidence: dict) -> None:
+    """At most one such action per case.
+
+    This is what stops a re-run audit from re-recording an outcome it already recorded.
+    `suspend` and `correction_window` used to be protected only incidentally — they mutate
+    `Product.status`, which drops the product out of the sweep's `active`/`flagged` filter.
+    `logistics_referral` deliberately does NOT change status (a delivery fault is the hub's
+    problem, and the listing stays live), so it had no such protection and re-logged itself
+    on every single audit. Verified: three identical sweeps grew the action table 9 -> 12.
+    """
+    log_action_once(db, product_id, action, evidence)
 
 
 def _apply_penalty(seller, penalty: dict | None) -> None:

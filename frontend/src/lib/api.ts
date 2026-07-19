@@ -1,4 +1,4 @@
-// Typed client for the Build Trust backend. Shapes mirror backend/app (Phases 2–4).
+// Typed client for the Build Trust backend. Shapes mirror the Pydantic DTOs in backend/app/schemas.py.
 export const API = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
 export type Review = {
@@ -219,6 +219,41 @@ export const api = {
   buyers: () => fetch(`${API}/buyers`, { cache: "no-store" }).then(j<BuyerSummary[]>),
   buyerOrders: (buyer_id: string) =>
     fetch(`${API}/buyers/${buyer_id}/orders`, { cache: "no-store" }).then(j<BuyerOrders>),
+
+  /** Upload a listing video and extract its quality fingerprint live (OpenCV keyframes
+   *  -> one multimodal read). Surfaces the server's own message on failure, because
+   *  "quota exhausted, previous fingerprint restored" is information a presenter needs. */
+  uploadListingVideo: async (product_id: string, file: File): Promise<LiveFingerprint> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API}/products/${product_id}/listing-video`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error(detail?.detail ?? `Upload failed (${res.status})`);
+    }
+    return res.json() as Promise<LiveFingerprint>;
+  },
+  resetListingVideo: (product_id: string) =>
+    fetch(`${API}/products/${product_id}/listing-video/reset`, { method: "POST" })
+      .then(j<{ product_id: string; restored: boolean }>),
+};
+
+export type QualityAttributes = Record<string, string>;
+export type LiveFingerprint = {
+  product_id: string;
+  product_title: string;
+  filename: string;
+  size_bytes: number;
+  frames_sampled: number;
+  attributes: QualityAttributes;
+  summary: string;
+  confidence: number;
+  notes: string[];
+  replaced_seeded_fingerprint: boolean;
+  extracted_live: boolean;
 };
 
 export type FitResult = {

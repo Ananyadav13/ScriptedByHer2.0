@@ -9,7 +9,7 @@ The guiding principle, encoded throughout: **authenticity matters, but not at th
 
 Built for ScriptedBy{Her} 2.0 (Round 3).
 
-> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop run end to end. 89 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
+> **Status:** feature-complete prototype. Both agents, the buyer/seller/manager consoles, and the full moderation loop run end to end. 120 tests pass. This is a demo prototype, not a production system — see [Limitations](#limitations).
 
 ---
 
@@ -118,6 +118,7 @@ The fastest path is **`/demo`** — a guided two-journey walkthrough that drives
 
 ### Journey B — seller lists a product, Agent 2 audits it
 
+0. **Extract a fingerprint from your own video.** Step 1 of the seller walkthrough has an **Upload a listing video** control — drop in any 5–15 s clip of fabric and the real pipeline runs on screen: OpenCV samples the keyframes, one multimodal read distils them into the seven golden fields, and the colour it recorded is shown *separately* as the thing it will never score. One click restores the seeded fingerprint. See [Extract a fingerprint live](#extract-a-fingerprint-live-from-your-own-video).
 1. **`/seller/new`** — try submitting a listing with no description or measurements. The mandatory-field gate blocks it and names the exact missing fields.
 2. **`/admin`** (the Agent 2 console) — hit **Run catalog audit**. Agent 2 clusters real buyer complaints, applies the deterministic delisting tiers, and drafts corrections.
 3. **`/seller`** — the seller sees the drafted fix (e.g. real bag measurements) and approves it in one tap; the listing returns to full visibility.
@@ -221,23 +222,44 @@ A vision model therefore cannot produce a colour false-flag even if it insists t
 
 Being precise about this, because the distinction matters:
 
-| Stage | In the shipped demo | Implementation |
+| Stage | Default (seeded) | Implementation |
 | --- | --- | --- |
-| Keyframe extraction from a listing video | **Not exercised** — no video ships with this repo | `vision.extract_keyframes` (OpenCV: video, stills folder, or single image) |
+| Keyframe extraction from a listing video | **On demand** — upload a clip in the demo | `vision.extract_keyframes` (OpenCV: video, stills folder, or single image) |
 | Listing → golden fields | **Pre-extracted** into `seed.py` | `vision.extract_quality_fingerprint` — one multimodal call, cached on the product |
 | Buyer evidence → golden fields | **Pre-extracted** into `seed.py` | `vision._read_frames` — one multimodal call |
 | The mismatch verdict | **Runs live, every time** | `services/quality_fingerprint.compare_fingerprints` — pure Python, no LLM |
 
 The reasoning: video files are large and the free Gemini tier is daily-capped, so seeding
 the two attribute reads makes the demo byte-identical on every run and costs zero quota.
-**The part that actually decides anything — the deterministic diff — is not seeded and
+**The part that actually decides anything — the deterministic diff — is never seeded and
 runs for real.**
 
-To exercise the extraction path end to end, drop a clip at
-`backend/media/videos/kurti_listing_black.mp4`, clear that product's
-`quality_fingerprint_json`, and re-run: `check_media_evidence` re-extracts from the video
-and caches the result. The code path is complete and unit-tested; only the media asset is
-absent from the repository.
+#### Extract a fingerprint live, from your own video
+
+No asset ships with the repo, so the extraction is available on demand instead. In the
+**seller walkthrough** (`/demo` → *Seller: a listing, audited*) there is an
+**Upload a listing video** control. Drop in a 5–15 second clip of any fabric and watch the
+real pipeline run:
+
+```
+your .mp4  →  OpenCV samples up to 6 keyframes  →  one multimodal read
+           →  the 7 variant-invariant golden fields, on screen
+           →  the same fingerprint every dispute is judged against
+```
+
+The panel shows how many keyframes were sampled, the model's own confidence, and — set
+apart — the colour/shade/print it recorded **but will never score**, which is the whole
+safeguard made visible.
+
+- `POST /products/{id}/listing-video` — upload and re-extract
+- `POST /products/{id}/listing-video/reset` — restore the seeded fingerprint, so the demo
+  can be run again from a known state
+
+**It cannot break the demo.** The existing fingerprint is snapshotted before extraction and
+restored on *any* failure — exhausted quota, a slow network, an undecodable codec — and the
+UI says so plainly. Uploading can only improve the story, never derail it. Covered by
+`tests/test_listing_video.py` (9 tests), including the quota-failure path and a check that
+the flagship dispute still resolves correctly afterwards.
 
 ### Agent 2 — catalog integrity
 
@@ -273,6 +295,18 @@ Agent 1 always picks the **least drastic correct action**:
 - **Two-signal refunds.** OTP-scan mismatch, hub anomaly, and a missing geo-tagged delivery photo are independent signals; two or more fast-track a refund. A serial claimer routes to manual review instead of auto-refunding. A fraudulent hub triggers immediate ops escalation and is never auto-banned (it's infrastructure).
 - **Humans hold the final call.** Agents recommend and take *interim* action; the owning manager decides. A manager may only act on their own sellers' listings (enforced server-side, 403 otherwise). Every decision notifies the seller, and the buyer whenever it affects them.
 
+### State integrity
+
+The audit trail is only worth something if it is exact, so the write path is defensive:
+
+- **Every write is idempotent.** `CatalogAction` and `Notification` rows use a primary key derived from *what happened, to what, in which case* (`app/idempotency.py`) rather than a random id. A repeat is a primary-key collision the database refuses, so a double-clicked button, a re-run audit, or two concurrent investigations produce one row — not three. This is a database guarantee, not a check-then-insert, which loses the race: measured, 12 threads released from a barrier previously wrote 12 duplicate locks.
+- **Dedupe is scoped to the open case.** A case closes when a manager rules on it. If the product later re-offends, that *is* a new event and is recorded — suppressing it forever would be its own bug.
+- **Terminal states stay terminal.** A refunded order is never refunded again, and no dispute can be opened on one. `manual_review` and `refunded` orders are excluded from new disputes, matching what the buyer's My Orders view already shows.
+- **One investigation per order.** A second dispute on an order with a live investigation returns `409` instead of starting a second agent loop.
+- **Only the seller's own step is self-serve.** `POST /products/{id}/reverify` clears `needs_info` — the seller responding to a quality-check request. Every manager-owned status (`locked`, `suspended`, `on_hold`, `correction_window`) returns `409` and points at the manager route, so the "managers decide" rule cannot be routed around.
+
+All of the above is covered by `tests/test_state_integrity.py` (22 tests), which fails if any guard is removed.
+
 ---
 
 ## Repository structure
@@ -302,9 +336,10 @@ Agent 1 always picks the **least drastic correct action**:
 │   │   ├── schemas.py         # Pydantic DTOs + the Verdict schema
 │   │   ├── seed.py            # demo catalog + golden-path scenarios
 │   │   ├── time_utils.py      # single source of UTC "now"
+│   │   ├── idempotency.py     # deterministic keys — one audit row per event
 │   │   ├── logging_config.py  # console + rotating file logs, moderation events
 │   │   └── main.py            # app factory, CORS, lifespan
-│   ├── tests/                 # 89 tests
+│   ├── tests/                 # 120 tests
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
@@ -330,7 +365,7 @@ Agent 1 always picks the **least drastic correct action**:
 ```bash
 cd backend
 .venv\Scripts\activate          # source .venv/bin/activate on macOS/Linux
-pytest                          # 89 tests
+pytest                          # 120 tests
 pytest -v                       # per-test names
 pytest tests/test_api_smoke.py  # API layer only
 ```
@@ -339,6 +374,7 @@ Three layers:
 
 - **Unit tests (66)** cover every deterministic decision rule — risk checks (13), delisting tiers (14), the quality-fingerprint diff (13), the mandatory-field gate (12), fit prediction (9), tripwires (5). They use lightweight object stand-ins, so they run in seconds with no database and no API key.
 - **API smoke tests (16)** drive the real app through FastAPI's `TestClient`: health, catalog browsing, the seller listing gate, the manager queue and decisions (including the cross-manager 403), buyer dispute intake, dispute resolution, notifications, and both agent surfaces.
+- **State-integrity tests (22)** lock in idempotency (repeated and concurrent agent runs write one audit row, not twelve), endpoint validation, legal state transitions, and the governance rule that a manager decision cannot be bypassed.
 - **Drift tests (7)** enforce that `rules.py` really is the source of truth: every constant is consumed by real code, and no threshold is hardcoded in the prompts — the agent's instructions and the deterministic engine cannot silently diverge.
 
 The tests run **fully offline**. Every LLM entry point is stubbed, and `tests/conftest.py` redirects `DATABASE_URL` to a dedicated `test_build_trust.db` before the app is imported — so running the suite never touches your working database.
@@ -374,7 +410,7 @@ Honest scope notes for reviewers:
 - **SQLite with threaded background workers.** Fine for a demo; a real deployment needs Postgres.
 - **Single-process only.** SSE trace events are held in in-memory queues (`app/agents/events.py`), so the API must run with one worker. Horizontal scaling requires a shared broker for those events first.
 - **No rate limiting.** `/investigate` and `/dispute` each start a background LLM loop and are unauthenticated — fine behind a demo URL, not on the open internet.
-- **Media pipeline is seeded, not live.** The listing/buyer attribute reads are pre-extracted into `seed.py` for a deterministic, zero-quota demo; no video ships with the repo. The deterministic diff that produces the verdict does run live. See [Media pipeline](#media-pipeline-what-runs-live-and-what-is-pre-extracted).
+- **Media reads are seeded by default.** The listing/buyer attribute reads are pre-extracted into `seed.py` for a deterministic, zero-quota demo, and no video ships with the repo — but the extraction runs live on demand via the walkthrough's video upload. The deterministic diff that produces the verdict is never seeded. See [Media pipeline](#media-pipeline-what-runs-live-and-what-is-pre-extracted).
 - **Media evidence is advisory by design.** Lighting, wear, and angle make it uncertain, so it never auto-punishes — it routes to a human.
 - **Seeded demo data.** Reviews and orders are synthetic, generated to exercise each decision path.
 - **Gemini free tier.** Daily quota is limited, hence the API-key pool with rotation. Every deterministic surface works without a key.

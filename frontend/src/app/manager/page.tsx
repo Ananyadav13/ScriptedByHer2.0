@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, type ManagerInfo, type ManagerQueueItem, type ManagerSeller } from "@/lib/api";
 import { statusMeta } from "@/lib/decisions";
@@ -122,35 +122,61 @@ function CaseCard({
 export default function ManagerActionNeeded() {
   const [managers, setManagers] = useState<ManagerInfo[]>([]);
   const [active, setActive] = useState<string | null>(null);
-  const [queue, setQueue] = useState<ManagerQueueItem[] | null>(null);
-  const [sellers, setSellers] = useState<ManagerSeller[]>([]);
+  // Queue and sellers are stored together with the manager they describe, so a slow
+  // response for a previously-selected manager can never paint into the current one's view.
+  const [data, setData] = useState<
+    { managerId: string; queue: ManagerQueueItem[]; sellers: ManagerSeller[] } | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const queue = data?.managerId === active ? data.queue : null;
+  const sellers = data?.managerId === active ? data.sellers : [];
 
   useEffect(() => {
     api.managers().then((ms) => { setManagers(ms); setActive(ms[0]?.id ?? null); }).catch(() => setManagers([]));
   }, []);
 
-  const load = useCallback(async (id: string) => {
-    setQueue(null);
-    const [q, s] = await Promise.allSettled([api.managerQueue(id), api.managerSellers(id)]);
-    // newest-reported first — a just-filed case jumps to the top
-    const items = q.status === "fulfilled" ? [...q.value.items] : [];
-    items.sort((a, b) => (b.acted_at ?? "").localeCompare(a.acted_at ?? ""));
-    setQueue(items);
-    setSellers(s.status === "fulfilled" ? s.value.sellers : []);
+  // Refetch when the manager changes or a decision bumps `reloadToken`.
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    (async () => {
+      const [q, s] = await Promise.allSettled([api.managerQueue(active), api.managerSellers(active)]);
+      if (cancelled) return;
+      // newest-reported first — a just-filed case jumps to the top
+      const items = q.status === "fulfilled" ? [...q.value.items] : [];
+      items.sort((a, b) => (b.acted_at ?? "").localeCompare(a.acted_at ?? ""));
+      setData({
+        managerId: active,
+        queue: items,
+        sellers: s.status === "fulfilled" ? s.value.sellers : [],
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [active, reloadToken]);
+
+  // One shared toast timer, always cleared — otherwise navigating away within the 3.5s
+  // window leaves a timer that fires against an unmounted page.
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3500);
   }, []);
 
-  useEffect(() => { if (active) load(active); }, [active, load]);
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   const decideListing = async (productId: string, decision: string, comment: string) => {
     if (!active) return;
     setBusy(productId);
     try {
       const r = await api.managerDecide(active, productId, decision, comment);
-      setToast(r.buyers_notified > 0 ? "Decision applied — buyer and seller notified." : "Decision applied — seller notified.");
-      await load(active);
-      setTimeout(() => setToast(null), 3500);
+      showToast(r.buyers_notified > 0 ? "Decision applied — buyer and seller notified." : "Decision applied — seller notified.");
+      setReloadToken((t) => t + 1);
     } finally {
       setBusy(null);
     }
@@ -161,9 +187,8 @@ export default function ManagerActionNeeded() {
     setBusy(orderId);
     try {
       await api.managerDecideDispute(active, orderId, decision, comment);
-      setToast(decision === "reject" ? "Claim rejected — buyer notified." : "Refund approved — buyer notified.");
-      await load(active);
-      setTimeout(() => setToast(null), 3500);
+      showToast(decision === "reject" ? "Claim rejected — buyer notified." : "Refund approved — buyer notified.");
+      setReloadToken((t) => t + 1);
     } finally {
       setBusy(null);
     }

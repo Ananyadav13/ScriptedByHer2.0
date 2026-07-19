@@ -19,7 +19,7 @@ builds but are not imported by our code.
 | google-genai | 2.11.0 | Apache-2.0 | Gemini SDK — Agent 1's function-calling loop, the vision reads, Agent 2's clustering | https://github.com/googleapis/python-genai |
 | python-dotenv | 1.0.1 | BSD-3-Clause | `.env` loading behind pydantic-settings | https://github.com/theskumar/python-dotenv |
 | opencv-python-headless | 4.11.0.86 | Apache-2.0 | Keyframe extraction + JPEG resizing in `app/agents/vision.py` | https://github.com/opencv/opencv-python |
-| pytest | 8.3.4 | MIT | Test suite (89 tests) | https://github.com/pytest-dev/pytest |
+| pytest | 8.3.4 | MIT | Test suite (120 tests) | https://github.com/pytest-dev/pytest |
 
 ### Transitive (pinned for reproducibility, not imported by our code)
 

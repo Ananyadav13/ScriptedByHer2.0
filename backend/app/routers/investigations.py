@@ -23,10 +23,23 @@ class InvestigateIn(BaseModel):
     order_id: str | None = None
 
 
+_TRIGGERS = {"pre_purchase", "catalog_gate", "post_delivery", "tripwire"}
+
+
 @router.post("/investigate")
 def investigate(body: InvestigateIn, background: BackgroundTasks, db: Session = Depends(get_db)):
     if not body.product_id and not body.order_id:
         raise HTTPException(400, "product_id or order_id required")
+    # Validate the referenced rows BEFORE queueing work. Previously an unknown id returned
+    # 200 and queued an investigation that could only fail in a background thread, where
+    # the caller never sees it — a 404 here costs nothing and keeps the contract honest.
+    # (SQLite does not enforce foreign keys by default, so nothing else would catch this.)
+    if body.product_id and not db.get(Product, body.product_id):
+        raise HTTPException(404, f"product {body.product_id} not found")
+    if body.order_id and not db.get(Order, body.order_id):
+        raise HTTPException(404, f"order {body.order_id} not found")
+    if body.trigger not in _TRIGGERS:
+        raise HTTPException(422, f"trigger must be one of {sorted(_TRIGGERS)}")
 
     inv_id = f"inv_{uuid.uuid4().hex[:12]}"
     db.add(Investigation(

@@ -10,6 +10,8 @@ pydantic-settings==2.7.1
 google-genai==2.11.0
 python-dotenv==1.0.1
 opencv-python-headless==4.11.0.86
+# multipart form parsing — required by FastAPI's UploadFile (live listing-video upload)
+python-multipart==0.0.20
 pytest==8.3.4
 
 # Transitive, pinned for reproducible builds (not imported directly by this project):

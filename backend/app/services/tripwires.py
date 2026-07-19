@@ -1,6 +1,6 @@
 """Deterministic tripwires — NO LLM.
 
-The "event-driven, not polling" model (PLAN §5A): cheap deterministic watchers scan the
+The "event-driven, not polling" model: cheap deterministic watchers scan the
 catalogue; when one trips, the caller FIRES an Agent-1 investigation (`run_investigation`).
 That is what makes Agent 1 feel real-time without burning the free-tier quota on a poll loop.
 

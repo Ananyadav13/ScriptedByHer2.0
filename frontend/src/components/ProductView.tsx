@@ -96,10 +96,15 @@ export function ProductView({ detail: p }: { detail: ProductDetail }) {
       {imgs.length > 1 && (
         <div className="flex gap-2 overflow-x-auto px-4 py-2.5">
           {imgs.map((src, i) => (
+            // Each thumbnail is a control that swaps the main image, so it needs its own
+            // accessible name and must announce which one is currently shown. The <img>
+            // inside stays decorative — the button carries the label.
             <button
               key={i}
               onClick={() => setImg(i)}
-              className={`shrink-0 overflow-hidden rounded-md border-2 ${i === img ? "border-brand" : "border-line"}`}
+              aria-label={`Show image ${i + 1} of ${imgs.length}`}
+              aria-current={i === img}
+              className={`shrink-0 overflow-hidden rounded-md border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${i === img ? "border-brand" : "border-line"}`}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={src} alt="" className="h-16 w-14 bg-white object-contain" />
@@ -220,9 +225,11 @@ export function ProductView({ detail: p }: { detail: ProductDetail }) {
             <div className="mt-4">
               <button
                 onClick={() => setShowChart((v) => !v)}
-                className="flex w-full items-center justify-between text-sm font-semibold text-ink"
+                aria-expanded={showChart}
+                className="flex w-full items-center justify-between text-sm font-semibold text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
               >
-                Size Chart <span className="text-ink-faint">{showChart ? "▲" : "▼"}</span>
+                {/* the caret is decorative — aria-expanded already conveys the state */}
+                Size Chart <span aria-hidden="true" className="text-ink-faint">{showChart ? "▲" : "▼"}</span>
               </button>
               {showChart && (
                 <div className="mt-3 overflow-x-auto">

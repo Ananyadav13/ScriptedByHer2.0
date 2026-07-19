@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -38,8 +38,21 @@ export function Nav() {
   const pathname = usePathname();
   const [open, setOpen] = useState<string | null>(null);
 
+  // Escape closes an open dropdown — the conventional keyboard exit. Without it a
+  // keyboard user who opens a group has no way to dismiss it.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   const linkClass = (active: boolean) =>
-    `shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 font-medium transition sm:px-2.5 ${
+    `shrink-0 whitespace-nowrap rounded-md px-2 py-1.5 font-medium transition sm:px-2.5 ` +
+    // a visible keyboard focus ring; `focus-visible` keeps it off mouse clicks
+    `focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-1 ${
       active ? "bg-brand-wash text-brand-ink" : "text-ink-soft hover:bg-brand-wash hover:text-brand-ink"
     }`;
 
@@ -58,6 +71,7 @@ export function Nav() {
         }
         const groupActive = e.items.some((i) => pathname === i.href);
         const isOpen = open === e.label;
+        const menuId = `nav-menu-${e.label.toLowerCase().replace(/\s+/g, "-")}`;
         return (
           <div
             key={e.label}
@@ -69,18 +83,27 @@ export function Nav() {
               onClick={() => setOpen((o) => (o === e.label ? null : e.label))}
               className={linkClass(groupActive) + " inline-flex items-center gap-1"}
               aria-expanded={isOpen}
+              aria-haspopup="menu"
+              aria-controls={menuId}
             >
               {e.label}
-              <span className="text-[10px] text-ink-faint">▾</span>
+              {/* decorative caret: the button already announces its expanded state */}
+              <span aria-hidden="true" className="text-[10px] text-ink-faint">▾</span>
             </button>
             {isOpen && (
-              <div className="absolute right-0 top-full z-40 mt-1 min-w-44 overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-lg">
+              <div
+                id={menuId}
+                role="menu"
+                aria-label={e.label}
+                className="absolute right-0 top-full z-40 mt-1 min-w-44 overflow-hidden rounded-xl border border-line bg-surface py-1 shadow-lg"
+              >
                 {e.items.map((i) => (
                   <Link
                     key={i.href}
                     href={i.href}
+                    role="menuitem"
                     onClick={() => setOpen(null)}
-                    className={`block px-3.5 py-2 text-sm transition ${
+                    className={`block px-3.5 py-2 text-sm transition focus-visible:outline-none focus-visible:bg-brand-wash ${
                       pathname === i.href ? "bg-brand-wash font-medium text-brand-ink" : "text-ink-soft hover:bg-[#f5f3f9]"
                     }`}
                   >

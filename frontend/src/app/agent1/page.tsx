@@ -80,21 +80,38 @@ export default function Agent1Page() {
   const [active, setActive] = useState<Scn>(SCENARIOS[0]);
   const [evidence, setEvidence] = useState<Agent1Evidence | null>(null);
 
-  const loadCases = useCallback(async () => {
-    try {
-      setCases((await api.investigations(20)).investigations);
-    } catch {
-      setCases([]);
-    }
-  }, []);
-  useEffect(() => {
-    loadCases();
-  }, [loadCases]);
+  const [casesToken, setCasesToken] = useState(0);
+  // Bumping the token re-runs the fetch below — used when a finished investigation should
+  // appear in the case list.
+  const refreshCases = useCallback(() => setCasesToken((t) => t + 1), []);
 
   useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.investigations(20);
+        if (!cancelled) setCases(r.investigations);
+      } catch {
+        if (!cancelled) setCases([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [casesToken]);
+
+  // `cancelled` discards a response for a scenario the user has already switched away
+  // from, so a slow request cannot paint stale evidence under the current scenario.
+  useEffect(() => {
     if (!showTech) return;
-    setEvidence(null);
-    api.agent1Evidence({ product_id: active.product_id, order_id: active.order_id }).then(setEvidence).catch(() => setEvidence(null));
+    let cancelled = false;
+    (async () => {
+      try {
+        const ev = await api.agent1Evidence({ product_id: active.product_id, order_id: active.order_id });
+        if (!cancelled) setEvidence(ev);
+      } catch {
+        if (!cancelled) setEvidence(null);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [active, showTech]);
 
   const start = useMemo(
@@ -246,7 +263,7 @@ export default function Agent1Page() {
                 label="Run Agent 1"
                 sublabel={active.label}
                 start={start}
-                onResolve={loadCases}
+                onResolve={refreshCases}
               />
             </div>
           </div>

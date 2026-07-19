@@ -9,14 +9,14 @@ doesn't just flag.
 from __future__ import annotations
 
 import logging
-import uuid
 
 from google.genai import types
 
 from ..config import settings
 from ..db import SessionLocal
+from ..idempotency import log_action_once, notify_once
 from ..logging_config import log_moderation_event
-from ..models import CatalogAction, Hub, Investigation, Notification, Order, Product
+from ..models import Hub, Investigation, Order, Product
 from ..schemas import Verdict
 from ..services import risk_checks, rules
 from ..time_utils import utcnow
@@ -137,11 +137,8 @@ def _final_verdict(contents: list) -> Verdict:
 def _notify(db, audience: str, subject: str, body: str,
             priority: str = "normal", related_id: str | None = None,
             recipient_id: str | None = None) -> None:
-    db.add(Notification(
-        id=f"ntf_{uuid.uuid4().hex[:12]}",
-        audience=audience, recipient_id=recipient_id, subject=subject, body=body,
-        priority=priority, related_id=related_id, created_at=utcnow(),
-    ))
+    """Queue an outbound message, at most once per (audience, subject, case)."""
+    notify_once(db, audience, subject, body, priority, related_id, recipient_id)
 
 
 def _manager_of(product: Product | None) -> str | None:
@@ -151,10 +148,13 @@ def _manager_of(product: Product | None) -> str | None:
 
 
 def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
-    log_moderation_event(
-        "agent1", action, product_id,
-        decision=verdict.decision, confidence=round(verdict.confidence, 2),
-    )
+    """Record one agent action, once per case.
+
+    The audit trail is a headline claim of this project, so it has to be trustworthy: a
+    double-clicked button or two concurrent investigations must not produce two identical
+    `lock` rows in the manager's log. Scoped by `_case_epoch`, so a genuine re-offence
+    after a manager decision is still recorded.
+    """
     evidence = {"decision": verdict.decision, "evidence": verdict.evidence,
                 "confidence": verdict.confidence}
     # advisory recommendations carry the manager-facing next step + remedy
@@ -162,13 +162,18 @@ def _log_action(db, product_id: str, action: str, verdict: Verdict) -> None:
         evidence["recommended_action"] = verdict.recommended_action
     if verdict.suggested_remedy:
         evidence["suggested_remedy"] = verdict.suggested_remedy
-    db.add(CatalogAction(
-        id=f"act_{uuid.uuid4().hex[:12]}",
-        product_id=product_id,
-        action=action,
-        evidence_json=evidence,
-        created_at=utcnow(),
-    ))
+
+    written = log_action_once(db, product_id, action, evidence)
+    # Log the moderation event only when a row was actually written, so the operational
+    # log and the audit table always agree on how many times something happened.
+    if written:
+        log_moderation_event(
+            "agent1", action, product_id,
+            decision=verdict.decision, confidence=round(verdict.confidence, 2),
+        )
+    else:
+        log.debug("duplicate %s on %s suppressed — already recorded for this case",
+                  action, product_id)
 
 
 def _request_qc(db, product: Product, verdict: Verdict, buyer_msg: str) -> None:
@@ -264,13 +269,23 @@ def _execute_action(db, product: Product | None, order_id: str | None, verdict: 
     order = db.get(Order, order_id) if order_id else None
     if order is not None:
         if d == "refund_fast_track":
-            order.status = "refunded"
-            _notify(db, "support", "Refund fast-tracked (two corroborating signals)",
-                    f"Order {order.id}: {buyer_msg}", "high", order.id)
+            # A refunded order is terminal. Re-refunding is not just a duplicate log line —
+            # in a system wired to a real payment provider it is a second disbursement, so
+            # the transition is refused outright rather than silently repeated.
+            if order.status == "refunded":
+                log.info("order %s already refunded — skipping duplicate refund", order.id)
+            else:
+                order.status = "refunded"
+                _notify(db, "support", "Refund fast-tracked (two corroborating signals)",
+                        f"Order {order.id}: {buyer_msg}", "high", order.id)
         elif d == "manual_review":
-            order.status = "manual_review"
-            _notify(db, "support", "Dispute routed to manual review",
-                    f"Order {order.id}: {buyer_msg}", "normal", order.id)
+            # Never drag a settled order back into the queue.
+            if order.status == "refunded":
+                log.info("order %s already refunded — not routing to manual review", order.id)
+            else:
+                order.status = "manual_review"
+                _notify(db, "support", "Dispute routed to manual review",
+                        f"Order {order.id}: {buyer_msg}", "normal", order.id)
         # immediate hub escalation whenever a fraudulent hub is implicated
         hub = db.get(Hub, order.hub_id) if order.hub_id else None
         if hub is not None and (hub.case_count or 0) >= rules.HUB_ESCALATE_CASE_COUNT:

@@ -2,6 +2,7 @@
 
 Stable IDs are load-bearing — frontend scenario buttons and later phases reference them.
 """
+from copy import deepcopy
 from datetime import datetime, timedelta
 
 from .db import Base, SessionLocal, engine
@@ -22,6 +23,40 @@ from .models import (
 from .time_utils import utcnow
 
 NOW = utcnow()
+
+# ---------------------------------------------------------------------------
+# Seeded quality fingerprints — the "golden fields" a listing video distils into.
+#
+# Defined here as a named constant rather than inline, because two callers need the exact
+# same values: the seeder below, and `routers/media.py`'s reset endpoint, which restores
+# this after a live extraction so the presenter can re-run the demo from a known state.
+# One definition means the restored state is the seeded state by construction.
+#
+# These are PRE-EXTRACTED so the flagship comparison is byte-identical on every run and
+# costs zero Gemini quota. `POST /products/{id}/listing-video` replaces them with a real
+# live extraction from an uploaded clip; the reset endpoint puts them back.
+# ---------------------------------------------------------------------------
+SEEDED_FINGERPRINTS: dict[str, dict] = {
+    "prod_fabric_kurti": {
+        "listing_video_path": "kurti_listing_black.mp4",
+        "fingerprint": {
+            "attributes": {
+                "weave_structure": "woven, medium plain weave",
+                "surface_sheen": "semi-matte",
+                "fibre_texture": "smooth, soft",
+                "opacity": "opaque",
+                "stitch_quality": "dense, even seams",
+                "drape": "structured, holds shape",
+                "embellishment_type": "thread embroidery yoke",
+                "colour": "black", "shade": "jet black", "print_colourway": "white on black",
+            },
+            "summary": "Opaque, semi-matte woven rayon anarkali with an embroidered yoke — the Black variant.",
+            "confidence": 0.86,
+            "notes": ["listing video shows the Black colourway only"],
+            "source_frames": 6,
+        },
+    },
+}
 
 
 def _dt(days_ago: float) -> datetime:
@@ -128,28 +163,16 @@ def _seed(db):
                 title="Rayon Embroidered Anarkali Kurti", brand="EthnicWeave", category="apparel",
                 price=384, mrp=426, images=["kurti.jpg"],
                 fabric_claim="rayon", status="active",
-                listing_video_path="kurti_listing_black.mp4",
+                listing_video_path=SEEDED_FINGERPRINTS["prod_fabric_kurti"]["listing_video_path"],
                 # frames sampled from the seller's listing video (the BLACK variant they filmed) —
                 # the buyer's real photos live in frontend/public/evidence/.
                 listing_frame_urls=["/evidence/kurti_listing_1.png", "/evidence/kurti_listing_2.png",
                                     "/evidence/kurti_listing_3.png"],
                 size_chart_json={"S": "36", "M": "38", "L": "40"},
                 # golden fields distilled from the listing video: opaque, semi-matte woven RAYON.
-                quality_fingerprint_json={
-                    "attributes": {
-                        "weave_structure": "woven, medium plain weave",
-                        "surface_sheen": "semi-matte",
-                        "fibre_texture": "smooth, soft",
-                        "opacity": "opaque",
-                        "stitch_quality": "dense, even seams",
-                        "drape": "structured, holds shape",
-                        "embellishment_type": "thread embroidery yoke",
-                        "colour": "black", "shade": "jet black", "print_colourway": "white on black",
-                    },
-                    "summary": "Opaque, semi-matte woven rayon anarkali with an embroidered yoke — the Black variant.",
-                    "confidence": 0.86, "notes": ["listing video shows the Black colourway only"],
-                    "source_frames": 6,
-                }),
+                # deep-copied: the ORM would otherwise hold a reference to the module
+                # constant, and a later mutation would silently rewrite the seed itself.
+                quality_fingerprint_json=deepcopy(SEEDED_FINGERPRINTS["prod_fabric_kurti"]["fingerprint"])),
         # 4. Size drift: brand runs small. FLAGGED as a size-drift case for the manager (advisory
         #    — the sale continues); the buyer already gets the Agent-2 size hint in the cart.
         Product(id="prod_size_shoes", seller_id="seller_shoes",

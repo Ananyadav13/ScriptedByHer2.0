@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db import get_db
+from ..logging_config import log_moderation_event
 from ..models import CatalogAction, Product
 from ..schemas import ProductDetail, ProductOut
 from ..time_utils import utcnow
@@ -91,16 +92,45 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
     return detail
 
 
+# The ONLY status a seller may clear themselves. `needs_info` means the agent asked for a
+# quality-check video and is waiting (see rules.SELLER_QC_SLA_DAYS) — responding to that
+# request is the seller's documented move, so it restores the listing without a manager.
+#
+# Every other restricted status is a MANAGER decision (`locked`, `suspended`, `on_hold`,
+# `correction_window`). Letting a seller clear those would make the system's central
+# guarantee — agents recommend, managers decide — untrue: a listing suspended for fraud
+# could be self-restored with one unauthenticated request. Those return 409 and point the
+# caller at the manager route instead.
+_SELLER_CLEARABLE = {"needs_info"}
+_MANAGER_OWNED = _RESTRICTED - _SELLER_CLEARABLE
+
+
 @router.post("/{product_id}/reverify")
 def reverify(product_id: str, db: Session = Depends(get_db)):
-    """Seller 'live photo' reverification stub: a locked/held listing goes back to
-    active and the quality-check clock is cleared. Logged in catalog_actions.
-    (In production this would gate on an actual uploaded live photo / QC video.)"""
+    """Seller responds to a quality-check request: `needs_info` -> `active`.
+
+    This is the seller's half of the QC-video loop, not a general unlock. A manager-owned
+    status is refused (409) — only the owning manager can reverse their own decision, via
+    POST /manager/{manager_id}/products/{product_id}/decision.
+
+    Idempotent: re-posting once the listing is already active is a no-op that returns the
+    same body rather than writing a second audit row.
+    """
     p = db.get(Product, product_id)
     if not p:
         raise HTTPException(404, "product not found")
-    if p.status not in _RESTRICTED:
-        raise HTTPException(400, f"product is {p.status}, nothing to reverify")
+
+    if p.status in _MANAGER_OWNED:
+        raise HTTPException(
+            409,
+            f"'{p.status}' is a manager decision and cannot be cleared by reverification — "
+            f"use POST /manager/{{manager_id}}/products/{product_id}/decision",
+        )
+    if p.status not in _SELLER_CLEARABLE:
+        # already active (or some other unrestricted state): nothing to do, and saying so
+        # with 200 keeps a retried request from looking like a failure.
+        return {"product_id": p.id, "new_status": p.status, "from_status": p.status,
+                "applied": False, "detail": "no quality-check request is open"}
 
     prior = p.status
     p.status = "active"
@@ -110,9 +140,10 @@ def reverify(product_id: str, db: Session = Depends(get_db)):
         id=f"act_{uuid.uuid4().hex[:12]}",
         product_id=p.id,
         action="reverify",
-        evidence_json={"from_status": prior, "note": "seller reverification accepted"},
+        evidence_json={"from_status": prior, "note": "seller responded to the quality-check request"},
         seller_approved=True,
         created_at=utcnow(),
     ))
     db.commit()
-    return {"product_id": p.id, "new_status": p.status, "from_status": prior}
+    log_moderation_event("seller", "reverify", p.id, from_status=prior, to_status=p.status)
+    return {"product_id": p.id, "new_status": p.status, "from_status": prior, "applied": True}

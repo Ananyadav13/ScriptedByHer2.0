@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, type Draft, type Notif, type Product } from "@/lib/api";
 import { statusMeta } from "@/lib/decisions";
@@ -27,32 +27,44 @@ const FIELD_LABEL: Record<string, string> = {
 
 export default function SellerPage() {
   const [seller, setSeller] = useState(SELLERS[0]);
-  const [products, setProducts] = useState<Product[] | null>(null);
-  const [notifs, setNotifs] = useState<Notif[]>([]);
-  const [drafts, setDrafts] = useState<Draft[] | null>(null);
+  // Tagged with the seller it belongs to, so switching sellers can never show one
+  // seller's products under another's name while a slower response is still in flight.
+  const [data, setData] = useState<
+    { sellerId: string; products: Product[]; notifs: Notif[]; drafts: Draft[] } | null
+  >(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async (sid: string) => {
-    setProducts(null);
-    setDrafts(null);
-    const [all, n, d] = await Promise.allSettled([
-      api.products(),
-      api.notificationsFor("seller", sid),
-      api.sellerDrafts(sid),
-    ]);
-    setProducts(all.status === "fulfilled" ? all.value.filter((p) => p.seller_id === sid) : []);
-    setNotifs(n.status === "fulfilled" ? n.value : []);
-    setDrafts(d.status === "fulfilled" ? d.value.drafts : []);
-  }, []);
+  const fresh = data?.sellerId === seller.id ? data : null;
+  const products = fresh?.products ?? null;
+  const notifs = fresh?.notifs ?? [];
+  const drafts = fresh?.drafts ?? null;
+
   useEffect(() => {
-    load(seller.id);
-  }, [seller, load]);
+    const sid = seller.id;
+    let cancelled = false;
+    (async () => {
+      const [all, n, d] = await Promise.allSettled([
+        api.products(),
+        api.notificationsFor("seller", sid),
+        api.sellerDrafts(sid),
+      ]);
+      if (cancelled) return;
+      setData({
+        sellerId: sid,
+        products: all.status === "fulfilled" ? all.value.filter((p) => p.seller_id === sid) : [],
+        notifs: n.status === "fulfilled" ? n.value : [],
+        drafts: d.status === "fulfilled" ? d.value.drafts : [],
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [seller, reloadToken]);
 
   const approve = async (id: string) => {
     setBusy(true);
     try {
       await api.approveDraft(id);
-      await load(seller.id);
+      setReloadToken((t) => t + 1);
     } finally {
       setBusy(false);
     }
@@ -61,7 +73,7 @@ export default function SellerPage() {
     setBusy(true);
     try {
       await api.audit(false);
-      await load(seller.id);
+      setReloadToken((t) => t + 1);
     } finally {
       setBusy(false);
     }

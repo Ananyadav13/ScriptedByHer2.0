@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .logging_config import configure_logging, log_startup
-from .routers import catalog, disputes, events, investigations, manager, ops, orders, products
+from .routers import (
+    catalog, disputes, events, investigations, manager, media, ops, orders, products,
+)
 from .seed import create_and_seed_if_empty, reset_and_seed
 
 # Configured at import, before anything else can emit a record — otherwise the first
@@ -51,6 +53,7 @@ app.include_router(ops.router)
 app.include_router(manager.router)
 app.include_router(orders.router)
 app.include_router(catalog.router)
+app.include_router(media.router)
 
 
 @app.get("/health")

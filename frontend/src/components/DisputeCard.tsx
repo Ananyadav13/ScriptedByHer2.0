@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { api, type BuyerOrder } from "@/lib/api";
 import { CLAIM_TYPES } from "@/lib/orders";
 import { Badge, Button, Card } from "@/components/ui";
@@ -20,18 +21,40 @@ export function DisputeCard({ order, highlight }: { order: BuyerOrder; highlight
   const defaultClaim = order.claim_type ?? "item_not_as_described";
   const [claim, setClaim] = useState(defaultClaim);
   const [open, setOpen] = useState(false);
+  const [settled, setSettled] = useState(false);
 
   if (open) {
     return (
-      <TracePanel
-        label={`Dispute · ${order.product_title}`}
-        sublabel={CLAIM_TYPES.find((c) => c.value === claim)?.label}
-        autoStart
-        start={async () => {
-          const r = await api.dispute({ order_id: order.id, claim_type: claim });
-          return r.investigation_id;
-        }}
-      />
+      <div className="space-y-3">
+        <TracePanel
+          label={`Dispute · ${order.product_title}`}
+          sublabel={CLAIM_TYPES.find((c) => c.value === claim)?.label}
+          autoStart
+          onResolve={() => setSettled(true)}
+          start={async () => {
+            const r = await api.dispute({ order_id: order.id, claim_type: claim });
+            return r.investigation_id;
+          }}
+        />
+        {/* Once the agent has ruled, say what happens next and where to see it. The panel
+            used to be a dead end: the card was replaced with no way onward, so a presenter
+            had to navigate away and back. Re-filing is not offered because a second dispute
+            on the same order is correctly refused (409) — the case is already open. */}
+        {settled && (
+          <Card className="flex flex-wrap items-center justify-between gap-3 bg-brand-wash/40 p-4">
+            <p className="text-sm text-ink">
+              <b>Next:</b> this case is now in the manager&apos;s queue. Both you and the
+              seller are notified as soon as they decide.
+            </p>
+            <Link
+              href="/manager"
+              className="shrink-0 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-ink"
+            >
+              Open the manager queue →
+            </Link>
+          </Card>
+        )}
+      </div>
     );
   }
 
@@ -71,11 +94,17 @@ export function DisputeCard({ order, highlight }: { order: BuyerOrder; highlight
       {order.dispute_available ? (
         <>
           <div className="mt-4">
-            <label className="mb-1.5 block text-xs font-medium text-ink-faint">What went wrong?</label>
-            <div className="flex flex-wrap gap-2">
+            <span id={`claim-label-${order.id}`} className="mb-1.5 block text-xs font-medium text-ink-faint">
+              What went wrong?
+            </span>
+            {/* A single-select group, so it is announced as one: radiogroup + aria-checked
+                rather than five unrelated buttons a screen reader reads as independent. */}
+            <div role="radiogroup" aria-labelledby={`claim-label-${order.id}`} className="flex flex-wrap gap-2">
               {CLAIM_TYPES.map((c) => (
                 <button
                   key={c.value}
+                  role="radio"
+                  aria-checked={claim === c.value}
                   onClick={() => setClaim(c.value)}
                   className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
                     claim === c.value

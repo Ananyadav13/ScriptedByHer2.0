@@ -24,9 +24,22 @@ from ..time_utils import utcnow
 router = APIRouter(tags=["disputes"])
 
 
+# The claim categories a buyer may file — mirrors `frontend/src/lib/orders.ts`. Kept here
+# rather than in services/rules.py because this is an API-contract enum, not a tunable
+# decision threshold. `wrong_colour` is colour-sensitive (see rules.COLOUR_SENSITIVE_CLAIMS).
+CLAIM_TYPES = frozenset({
+    "item_not_as_described", "fabric_mismatch", "damaged", "not_received", "wrong_colour",
+})
+
+# A dispute may only be opened on an order that is still open. `refunded` is terminal and
+# `manual_review` already has a case in front of a manager — reopening either would let a
+# buyer file the same claim repeatedly and spawn an agent run each time.
+DISPUTABLE_STATUSES = frozenset({"delivered"})
+
+
 class DisputeIn(BaseModel):
     order_id: str
-    claim_type: str = "item_not_as_described"   # free-form buyer claim category
+    claim_type: str = "item_not_as_described"
     evidence_paths: list[str] = []              # buyer media (photos OR videos) for this claim
 
 
@@ -35,6 +48,26 @@ def open_dispute(body: DisputeIn, background: BackgroundTasks, db: Session = Dep
     order = db.get(Order, body.order_id)
     if not order:
         raise HTTPException(404, "order not found")
+    if body.claim_type not in CLAIM_TYPES:
+        raise HTTPException(422, f"claim_type must be one of {sorted(CLAIM_TYPES)}")
+    if order.status not in DISPUTABLE_STATUSES:
+        # matches the `dispute_available` flag the buyer's My Orders view already renders,
+        # so the UI and the API can never disagree about what is disputable.
+        raise HTTPException(409, f"order is '{order.status}' — no dispute can be opened on it")
+
+    # One open investigation per order. Without this a double-clicked button starts two
+    # agent loops racing on the same order, burning quota and duplicating outcomes.
+    existing = (
+        db.query(Investigation)
+        .filter(Investigation.order_id == order.id,
+                Investigation.status.in_(("queued", "running")))
+        .first()
+    )
+    if existing is not None:
+        raise HTTPException(
+            409,
+            f"an investigation ({existing.id}) is already running on this order",
+        )
 
     # attach buyer evidence + the claim so check_media_evidence can compare against the
     # product's quality fingerprint (and know whether COLOUR is in scope for this claim)

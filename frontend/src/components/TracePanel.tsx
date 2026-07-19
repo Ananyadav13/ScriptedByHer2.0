@@ -15,6 +15,11 @@ type Step = {
 
 type Phase = "idle" | "running" | "done" | "error";
 
+// Poll fallback budget: 1.2s x 50 = 60s, comfortably longer than a real investigation
+// (8 tool steps + a verdict call) while still terminating.
+const POLL_INTERVAL_MS = 1200;
+const POLL_MAX_ATTEMPTS = 50;
+
 // summarise a deterministic tool result dict into one human line.
 function resultLine(r: unknown): { text: string; flag?: boolean } {
   if (r == null || typeof r !== "object") return { text: String(r ?? "") };
@@ -57,7 +62,30 @@ export function TracePanel({
   const verdictRef = useRef<Verdict | null>(null);
   const resolvedRef = useRef(false);
   const onResolveRef = useRef(onResolve);
-  onResolveRef.current = onResolve;
+  // Tracks whether this component is still mounted. Every async continuation checks it
+  // before touching state, so navigating away mid-investigation cannot schedule work
+  // against a component that no longer exists.
+  const aliveRef = useRef(true);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Writing to a ref during render is a React 19 violation (it breaks under concurrent
+  // rendering, where a render may be discarded). An effect is the correct place.
+  useEffect(() => {
+    onResolveRef.current = onResolve;
+  }, [onResolve]);
+
+  // Release every resource this component owns. Without it, leaving the page mid-trace
+  // left the SSE connection open and the poll chain rescheduling itself indefinitely.
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+      esRef.current?.close();
+      esRef.current = null;
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    };
+  }, []);
 
   // fire onResolve exactly once when the investigation settles
   useEffect(() => {
@@ -107,22 +135,47 @@ export function TracePanel({
   }, []);
 
   // Fallback: SSE dropped or the investigation finished before we subscribed.
-  const pollOnce = useCallback(async (id: string) => {
-    try {
-      const inv = await api.investigation(id);
-      if (inv.verdict) {
-        verdictRef.current = inv.verdict;
-        setVerdict(inv.verdict);
-      }
-      if (inv.status === "done" || inv.verdict) setPhase("done");
-      else if (inv.status === "error") {
-        setError("Investigation failed.");
+  //
+  // Bounded on purpose. This used to reschedule itself forever with no ceiling, so an
+  // investigation that never reached a terminal status — a backend restarted mid-run
+  // leaves one stuck on "running" — polled every 1.2s for as long as the tab stayed open.
+  // POLL_MAX_ATTEMPTS covers comfortably longer than a real investigation takes, then
+  // surfaces an honest error instead of spinning silently.
+  const pollUntilSettled = useCallback(async (id: string) => {
+    // A loop rather than a self-rescheduling callback: the termination condition is one
+    // visible bound instead of a recursion that has to be traced to be trusted.
+    for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+      if (!aliveRef.current) return;
+      try {
+        const inv = await api.investigation(id);
+        if (!aliveRef.current) return;
+        if (inv.verdict) {
+          verdictRef.current = inv.verdict;
+          setVerdict(inv.verdict);
+        }
+        if (inv.status === "done" || inv.verdict) {
+          setPhase("done");
+          return;
+        }
+        if (inv.status === "error") {
+          setError("Investigation failed.");
+          setPhase("error");
+          return;
+        }
+      } catch {
+        if (!aliveRef.current) return;
+        setError("Could not reach the backend.");
         setPhase("error");
-      } else setTimeout(() => pollOnce(id), 1200);
-    } catch {
-      setError("Could not reach the backend.");
-      setPhase("error");
+        return;
+      }
+      // interruptible wait — the unmount cleanup clears this timer
+      await new Promise<void>((resolve) => {
+        pollTimerRef.current = setTimeout(resolve, POLL_INTERVAL_MS);
+      });
     }
+    if (!aliveRef.current) return;
+    setError("The investigation is taking longer than expected — check the agent console.");
+    setPhase("error");
   }, []);
 
   const run = useCallback(async () => {
@@ -137,13 +190,18 @@ export function TracePanel({
     try {
       id = await start();
     } catch {
+      if (!aliveRef.current) return;
       setError("Could not start the investigation — is the backend running?");
       setPhase("error");
       return;
     }
+    // Unmounted while the POST was in flight: never open a stream nobody is watching.
+    if (!aliveRef.current) return;
+
     const es = new EventSource(`${API}/events/${id}`);
     esRef.current = es;
     es.onmessage = (m) => {
+      if (!aliveRef.current) return;
       let ev: TraceEvent;
       try {
         ev = JSON.parse(m.data);
@@ -157,19 +215,22 @@ export function TracePanel({
       }
       if (ev.type === "closed") {
         es.close();
-        pollOnce(id); // already finished — read the final verdict
+        void pollUntilSettled(id); // already finished — read the final verdict
         return;
       }
       applyEvent(ev);
     };
     es.onerror = () => {
       es.close();
+      if (!aliveRef.current) return;
       // SSE dropped mid-flight → poll for the final state
-      if (!verdictRef.current) pollOnce(id);
+      if (!verdictRef.current) void pollUntilSettled(id);
     };
-  }, [start, applyEvent, pollOnce]);
+  }, [start, applyEvent, pollUntilSettled]);
 
-  // auto-start on mount (used by the dispute flow after claim selection)
+  // Auto-start on mount (the dispute flow renders this already-started, after the buyer
+  // has picked a claim type). `startedRef` inside `run` makes a second invocation a no-op,
+  // so React 18+ StrictMode's double-effect cannot open two investigations.
   useEffect(() => {
     if (autoStart) void run();
     // eslint-disable-next-line react-hooks/exhaustive-deps

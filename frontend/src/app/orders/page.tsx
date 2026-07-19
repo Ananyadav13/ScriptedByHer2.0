@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type BuyerOrders, type BuyerSummary } from "@/lib/api";
 import { Badge, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
 import { DisputeCard } from "@/components/DisputeCard";
@@ -9,7 +9,11 @@ export default function OrdersPage() {
   const [buyers, setBuyers] = useState<BuyerSummary[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [data, setData] = useState<BuyerOrders | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  // Derived rather than a separate flag: "loading" is precisely "the data I hold is not
+  // for the buyer currently selected". A `loading` state set alongside every fetch can
+  // disagree with the data it describes; this cannot.
+  const loading = !failed && active !== null && data?.buyer_id !== active;
 
   useEffect(() => {
     api
@@ -21,21 +25,27 @@ export default function OrdersPage() {
       .catch(() => setBuyers([]));
   }, []);
 
-  const load = useCallback(async (id: string) => {
-    setLoading(true);
-    setData(null);
-    try {
-      setData(await api.buyerOrders(id));
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Fetch keyed on the selected buyer. `cancelled` matters because switching buyers twice
+  // quickly leaves two requests in flight: without it, whichever resolves LAST wins, which
+  // can be the one for the buyer no longer selected.
   useEffect(() => {
-    if (active) load(active);
-  }, [active, load]);
+    if (!active) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const next = await api.buyerOrders(active);
+        if (!cancelled) {
+          setData(next);
+          setFailed(false);
+        }
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
 
   return (
     <Page>

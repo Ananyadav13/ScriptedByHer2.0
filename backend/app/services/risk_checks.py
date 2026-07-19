@@ -3,7 +3,7 @@
 Each returns a JSON-serializable dict with concrete numbers + a boolean `flag`,
 so the agent (and the SSE trace) can cite the exact evidence.
 
-Design rules encoded here (from the idea deck):
+Design rules encoded here:
 - A branded listing priced far below MRP is a counterfeit signal.
 - A review burst only counts as fake-review evidence when the spike coincides
   with a high share of brand-new accounts — an honest viral seller (real,

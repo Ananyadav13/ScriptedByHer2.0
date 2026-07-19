@@ -55,6 +55,10 @@ const TIPS: Record<Lang, Record<string, string>> = {
   },
 };
 
+// Module scope: a stable identity, so it can be a real effect dependency instead of a
+// fresh array on every render.
+const SIZE_ROWS = ["S", "M", "L", "XL"];
+
 export default function NewListingPage() {
   const [lang, setLang] = useState<Lang>("en");
   const [category, setCategory] = useState("apparel");
@@ -67,7 +71,6 @@ export default function NewListingPage() {
   const [videoName, setVideoName] = useState<string | null>(null);
   const [gate, setGate] = useState<{ allowed: boolean; missing: string[]; required: string[] } | null>(null);
 
-  const SIZE_ROWS = ["S", "M", "L", "XL"];
   const setCell = (size: string, key: "chest" | "length", val: string) =>
     setMeas((m) => ({ ...m, [size]: { ...(m[size] ?? { chest: "", length: "" }), [key]: val } }));
 
@@ -133,27 +136,27 @@ export default function NewListingPage() {
         <Card className="p-5">
           <div className="space-y-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-faint">Product title</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Rayon Embroidered Anarkali Kurti" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
+              <label htmlFor="nl-title" className="mb-1 block text-xs font-medium text-ink-faint">Product title</label>
+              <input id="nl-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Rayon Embroidered Anarkali Kurti" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-faint">Description <span className="text-ink-faint/70">(what it is, material, fit)</span></label>
-              <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Describe the product honestly — buyers who know what they're getting return less." className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
+              <label htmlFor="nl-desc" className="mb-1 block text-xs font-medium text-ink-faint">Description <span className="text-ink-faint/70">(what it is, material, fit)</span></label>
+              <textarea id="nl-desc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={3} placeholder="Describe the product honestly — buyers who know what they're getting return less." className="w-full resize-y rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
               <p className="mt-1 text-[11px] text-ink-faint">{desc.trim().length}/20 characters minimum</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-faint">Colour</label>
-                <input value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. Navy Blue" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
+                <label htmlFor="nl-colour" className="mb-1 block text-xs font-medium text-ink-faint">Colour</label>
+                <input id="nl-colour" value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. Navy Blue" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-ink-faint">Pattern <span className="text-ink-faint/70">(optional)</span></label>
-                <input value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="e.g. Solid, Printed" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
+                <label htmlFor="nl-pattern" className="mb-1 block text-xs font-medium text-ink-faint">Pattern <span className="text-ink-faint/70">(optional)</span></label>
+                <input id="nl-pattern" value={pattern} onChange={(e) => setPattern(e.target.value)} placeholder="e.g. Solid, Printed" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-faint">Category</label>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm">
+              <label htmlFor="nl-category" className="mb-1 block text-xs font-medium text-ink-faint">Category</label>
+              <select id="nl-category" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm">
                 {["apparel", "footwear", "home", "electronics", "beauty", "accessories", "jewellery", "kitchen", "watches", "kids", "stationery", "sports"].map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
@@ -177,23 +180,44 @@ export default function NewListingPage() {
               </div>
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-ink-faint">Fabric / material claim</label>
-              <input value={fabric} onChange={(e) => setFabric(e.target.value)} placeholder="e.g. 100% cotton" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
+              <label htmlFor="nl-fabric" className="mb-1 block text-xs font-medium text-ink-faint">Fabric / material claim</label>
+              <input id="nl-fabric" value={fabric} onChange={(e) => setFabric(e.target.value)} placeholder="e.g. 100% cotton" className="w-full rounded-xl border border-line bg-surface px-3 py-2 text-sm" />
             </div>
             <div>
               <label className="mb-1.5 block text-xs font-medium text-ink-faint">Listing video (canonical reference)</label>
+              {/* A real file picker. It previously set a hardcoded "listing_demo.mp4" and
+                  reported it as uploaded, which was untrue — this form drafts a listing that
+                  does not exist yet, so there is no product to attach a file to. It now
+                  records the file the seller actually chose, which is what the
+                  mandatory-field gate is checking for, and says plainly that extraction
+                  happens when the listing is created. */}
+              <input
+                id="nl-video"
+                type="file"
+                accept="video/mp4,video/quicktime,video/x-msvideo,video/x-matroska"
+                className="sr-only"
+                onChange={(e) => setVideoName(e.target.files?.[0]?.name ?? null)}
+              />
               {videoName ? (
                 <div className="flex items-center justify-between rounded-xl border border-green/40 bg-green-wash px-3 py-2.5 text-sm">
-                  <span className="font-medium text-green">🎥 {videoName} uploaded</span>
-                  <button onClick={() => setVideoName(null)} className="text-xs text-ink-faint hover:text-ink">remove</button>
+                  <span className="truncate font-medium text-green">🎥 {videoName} attached</span>
+                  <button onClick={() => setVideoName(null)} className="shrink-0 text-xs text-ink-faint hover:text-ink">remove</button>
                 </div>
               ) : (
-                <button onClick={() => setVideoName("listing_demo.mp4")} className="flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-line bg-[#fafafe] px-3 py-5 text-center transition hover:border-brand/50 hover:bg-brand-wash/30">
-                  <span className="text-2xl">📹</span>
+                <label htmlFor="nl-video" className="flex w-full cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed border-line bg-[#fafafe] px-3 py-5 text-center transition hover:border-brand/50 hover:bg-brand-wash/30">
+                  <span className="text-2xl" aria-hidden="true">📹</span>
                   <span className="text-sm font-medium text-ink">Record / upload a 5–15s video</span>
                   <span className="text-[11px] text-ink-faint">Trusty distils it into a quality fingerprint — your proof in a dispute</span>
-                </button>
+                </label>
               )}
+              <p className="mt-1.5 text-[11px] text-ink-faint">
+                The fingerprint is extracted when the listing is created. To watch that
+                extraction run live on an existing listing, open the{" "}
+                <Link href="/demo" className="font-medium text-brand-ink hover:underline">
+                  seller walkthrough
+                </Link>
+                .
+              </p>
             </div>
           </div>
         </Card>

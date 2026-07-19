@@ -5,7 +5,7 @@ Two LLM touchpoints, both ONE batched structured call (Gemini `response_schema` 
 
   1. `cluster_reviews(product_id)` — groups a product's negative reviews into labelled
      complaint clusters with an AGREEMENT score (share of negative reviews that agree).
-     We act on agreement, not raw count (deck promise). Distinct phrasings are sent
+     We act on agreement, not raw count. Distinct phrasings are sent
      weighted by frequency, so the payload stays tiny and cheap even for 1000 reviews.
 
   2. `draft_fix(product, cluster)` — for a FIXABLE cluster (fabric/size), drafts a
@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections import Counter
-
 from google.genai import types
 from pydantic import BaseModel
 

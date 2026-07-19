@@ -36,10 +36,12 @@ export default function CartPage() {
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <Card className="p-5">
           <div className="flex gap-4">
+            {/* Decorative: the product name is in the <h2> immediately beside it, so a
+                descriptive alt would make a screen reader announce it twice. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={productImage(PRODUCT)}
-              alt="Running Shoes"
+              alt=""
               className="h-24 w-24 shrink-0 rounded-xl object-cover"
             />
             <div className="min-w-0 flex-1">

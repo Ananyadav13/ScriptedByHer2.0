@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   api,
@@ -13,6 +13,7 @@ import {
 import { Badge, Card, Empty, Page, SectionTitle, Spinner } from "@/components/ui";
 import { DisputeCard } from "@/components/DisputeCard";
 import { FlowRail, type RailStop } from "@/components/FlowRail";
+import { LiveFingerprintPanel } from "@/components/LiveFingerprintPanel";
 import { productImage } from "@/lib/productImages";
 
 // ---------------------------------------------------------------------------
@@ -46,7 +47,7 @@ const STEPS: Record<Journey, Step[]> = {
       hat: "🛍️",
       title: "You bought a kurti — it feels wrong",
       narrative:
-        "You ordered the Rayon Anarkali Kurti in Blue. It arrived sheer and glossy — it feels like crepe, not the opaque rayon promised. Open a dispute and watch Trusty verify it live: delivery checks first, then a visual comparison of the seller's listing frames against your photos.",
+        "You ordered the Rayon Embroidered Anarkali Kurti in Blue. It arrived sheer and glossy — it feels like crepe, not the opaque rayon promised. Open a dispute and watch Trusty verify it live: delivery checks first, then a visual comparison of the seller's listing frames against your photos.",
     },
     {
       railActive: 2,
@@ -72,7 +73,7 @@ const STEPS: Record<Journey, Step[]> = {
       hat: "🏪",
       title: "You list your products",
       narrative:
-        "You're EthnicWeave & Aaraals. You listed a Pure Cotton Kurti (you could only film ONE colour) and a handbag combo sold as 'Free Size' with no measurements. Let's see what Agent 2 makes of them.",
+        "You're EthnicWeave & Aaraals. You listed the Rayon Embroidered Anarkali Kurti (you could only film ONE colour) and a handbag combo sold as 'Free Size' with no measurements. Let's see what Agent 2 makes of them.",
     },
     {
       railActive: 1,
@@ -254,31 +255,55 @@ function SellerStep({ step }: { step: number }) {
   const [drafts, setDrafts] = useState<Draft[] | null>(null);
   const [sellerNotifs, setSellerNotifs] = useState<Notif[] | null>(null);
 
-  const loadFindings = useCallback(async () => {
-    try {
-      const r = await api.agent2Findings();
-      setFindings(r.products.filter((p) => SELLER_PRODUCTS.has(p.product_id)));
-    } catch {
-      setFindings([]);
-    }
-  }, []);
-
+  // Each step lazily loads only what it needs, once. Every branch is guarded by
+  // `cancelled` so stepping quickly through the walkthrough — or leaving it mid-load —
+  // cannot land a response on an unmounted component.
   useEffect(() => {
-    if ((step === 0 || step === 1) && !findings) loadFindings();
-    if (step === 2 && !sellers) {
-      api.managerSellers("mgr_north").then((r) => setSellers(r.sellers)).catch(() => setSellers([]));
-    }
-    if (step === 3) {
-      if (!drafts) {
-        Promise.all([api.sellerDrafts("seller_bags"), api.sellerDrafts("seller_fixable")])
-          .then(([a, b]) => setDrafts([...a.drafts, ...b.drafts]))
-          .catch(() => setDrafts([]));
+    let cancelled = false;
+
+    (async () => {
+      if ((step === 0 || step === 1) && !findings) {
+        try {
+          const r = await api.agent2Findings();
+          if (!cancelled) setFindings(r.products.filter((p) => SELLER_PRODUCTS.has(p.product_id)));
+        } catch {
+          if (!cancelled) setFindings([]);
+        }
       }
-      if (!sellerNotifs) {
-        api.notificationsFor("seller", "seller_fixable").then(setSellerNotifs).catch(() => setSellerNotifs([]));
+
+      if (step === 2 && !sellers) {
+        try {
+          const r = await api.managerSellers("mgr_north");
+          if (!cancelled) setSellers(r.sellers);
+        } catch {
+          if (!cancelled) setSellers([]);
+        }
       }
-    }
-  }, [step, findings, sellers, drafts, sellerNotifs, loadFindings]);
+
+      if (step === 3 && !drafts) {
+        try {
+          const [a, b] = await Promise.all([
+            api.sellerDrafts("seller_bags"),
+            api.sellerDrafts("seller_fixable"),
+          ]);
+          if (!cancelled) setDrafts([...a.drafts, ...b.drafts]);
+        } catch {
+          if (!cancelled) setDrafts([]);
+        }
+      }
+
+      if (step === 3 && !sellerNotifs) {
+        try {
+          const n = await api.notificationsFor("seller", "seller_fixable");
+          if (!cancelled) setSellerNotifs(n);
+        } catch {
+          if (!cancelled) setSellerNotifs([]);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [step, findings, sellers, drafts, sellerNotifs]);
 
   if (step === 0) {
     return (
@@ -295,6 +320,12 @@ function SellerStep({ step }: { step: number }) {
           note="Listed as 'Free Size' with no measurements — the classic size-complaint trap."
           img="prod_bag_combo"
         />
+        <div className="sm:col-span-2">
+          <LiveFingerprintPanel
+            productId="prod_fabric_kurti"
+            productTitle="Rayon Embroidered Anarkali Kurti"
+          />
+        </div>
         <p className="text-xs text-ink-faint sm:col-span-2">
           Want to list one yourself? Open the{" "}
           <Link href="/seller" className="font-medium text-brand-ink hover:underline">

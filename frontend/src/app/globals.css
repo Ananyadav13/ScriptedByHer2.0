@@ -76,3 +76,29 @@ body {
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #d3d7e3; border-radius: 8px; }
+
+/* ---------------------------------------------------------------------------
+   Accessibility baseline. Purely additive — no existing visual is changed.
+   --------------------------------------------------------------------------- */
+
+/* A visible keyboard focus ring on every interactive element. `:focus-visible`
+   (not `:focus`) means mouse users never see it, so the design is untouched while
+   keyboard navigation becomes followable. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand, #6d28d9);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect a user's reduced-motion preference: the trace panel, mascot bob and
+   pulse animations are decorative, and vestibular disorders make them a barrier. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

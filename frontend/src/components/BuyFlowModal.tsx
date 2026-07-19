@@ -7,7 +7,7 @@ import { decisionMeta, isBlocking } from "@/lib/decisions";
 import { Button } from "@/components/ui";
 import { TracePanel } from "@/components/TracePanel";
 
-// "Buy Now / Add to Cart" runs Agent 1 first (PLAN §5A: Agent 1 fires on BUY NOW),
+// "Buy Now / Add to Cart" runs Agent 1 first (the agent fires on BUY NOW),
 // then gates: a blocking verdict stops the purchase; anything else lets it proceed.
 export function BuyFlowModal({
   productId,

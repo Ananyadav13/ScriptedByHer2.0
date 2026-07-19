@@ -14,6 +14,9 @@ import os
 
 os.environ["DATABASE_URL"] = "sqlite:///./test_build_trust.db"
 os.environ["SEED_RESET"] = "true"
+# Console-only logging for the suite. Without this the default LOG_DIR ("logs") makes every
+# test run write backend/logs/app.log — a filesystem side effect tests should not have.
+os.environ["LOG_DIR"] = ""
 
 from datetime import timedelta          # noqa: E402  (import after the env override)
 from types import SimpleNamespace       # noqa: E402
