@@ -108,15 +108,25 @@ export default function CartPage() {
   const items = useCart();
   const [smart, setSmart] = useState(true);
   const [placed, setPlaced] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [placeError, setPlaceError] = useState("");
 
   const total = cartTotal(items);
 
-  const checkout = () => {
-    // No payment integration in a prototype — but the order must visibly complete and the
-    // cart must actually empty, otherwise the button reads as broken (it previously had no
-    // handler at all and did nothing when clicked).
-    clearCart();
-    setPlaced(true);
+  const checkout = async () => {
+    // Place a real order per line, so what you just bought appears in My Orders and can be
+    // disputed. Checkout used to only empty the cart locally — nothing reached the backend,
+    // so the purchase vanished and the dispute flow had nothing to act on.
+    setPlacing(true);
+    try {
+      await Promise.all(items.map((i) => api.placeOrder(i.product_id, i.qty)));
+      clearCart();
+      setPlaced(true);
+    } catch {
+      setPlaceError("Couldn't place the order — is the backend running?");
+    } finally {
+      setPlacing(false);
+    }
   };
 
   if (placed) {
@@ -175,11 +185,16 @@ export default function CartPage() {
                 />
                 Build Trust size adjustment
               </label>
+              {placeError && (
+                <span className="w-full text-sm text-rose sm:w-auto">{placeError}</span>
+              )}
               <div className="flex items-center gap-3">
                 <span className="text-sm text-ink-soft">
                   Total <b className="text-ink">{money(total)}</b>
                 </span>
-                <Button onClick={checkout}>Checkout</Button>
+                <Button onClick={checkout} disabled={placing}>
+                  {placing ? <Spinner /> : "Checkout"}
+                </Button>
               </div>
             </div>
           </Card>

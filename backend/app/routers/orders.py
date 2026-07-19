@@ -7,17 +7,22 @@ copy and the agent's decision never disagree. Read-only; disputes are still open
 """
 from __future__ import annotations
 
+import logging
+import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import Buyer, Hub, Order, Product, ProductVariant
 from ..services import risk_checks
 from ..services.rules import SERIAL_CLAIM_COUNT
+from ..time_utils import utcnow
 
 router = APIRouter(tags=["orders"])
+log = logging.getLogger(__name__)
 
 # bulk volume orders (order_cf_*, order_sw_*) exist only to clear the confidence floor —
 # they are not real buyer purchases and must not clutter a My Orders view.
@@ -80,6 +85,49 @@ def _order_view(o: Order, db: Session) -> dict:
         "dispute_available": o.status == "delivered",
         "reaction": reaction,
     }
+
+
+class PlaceOrderIn(BaseModel):
+    buyer_id: str = "buyer_normal"
+    product_id: str
+    items_count: int = 1
+
+
+@router.post("/orders")
+def place_order(body: PlaceOrderIn, db: Session = Depends(get_db)):
+    """Place an order from the cart.
+
+    Checkout used to be purely local — the cart emptied and nothing reached the backend, so
+    the thing you just bought never appeared in My Orders and could not be disputed. The
+    order is created as DELIVERED with clean delivery signals: this prototype has no
+    fulfilment pipeline, and an order stuck in transit could never demonstrate the dispute
+    flow that follows it. Clean signals matter — a dispute on this order is judged on its
+    own evidence, not pre-loaded to fast-track a refund.
+    """
+    buyer = db.get(Buyer, body.buyer_id)
+    if not buyer:
+        raise HTTPException(404, f"buyer {body.buyer_id} not found")
+    product = db.get(Product, body.product_id)
+    if not product:
+        raise HTTPException(404, f"product {body.product_id} not found")
+
+    order = Order(
+        id=f"order_{uuid.uuid4().hex[:10]}",
+        buyer_id=buyer.id,
+        product_id=product.id,
+        hub_id="hub_normal",
+        otp_scan_count=max(1, body.items_count),
+        items_count=max(1, body.items_count),
+        delivered_at=utcnow(),
+        hub_anomaly_flag=False,
+        geo_photo_verified=True,
+        status="delivered",
+    )
+    db.add(order)
+    db.commit()
+    log.info("order %s placed: %s x%s for %s",
+             order.id, product.id, order.items_count, buyer.id)
+    return _order_view(order, db)
 
 
 @router.get("/buyers")

@@ -216,6 +216,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision, comment }),
     }).then(j<{ order_id: string; new_status: string; decision: string }>),
+  /** Place one order. Checkout calls this per cart line so what you just bought shows up
+   *  in My Orders and can actually be disputed. */
+  placeOrder: (product_id: string, items_count = 1, buyer_id = "buyer_normal") =>
+    fetch(`${API}/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ buyer_id, product_id, items_count }),
+    }).then(j<BuyerOrder>),
   buyers: () => fetch(`${API}/buyers`, { cache: "no-store" }).then(j<BuyerSummary[]>),
   buyerOrders: (buyer_id: string) =>
     fetch(`${API}/buyers/${buyer_id}/orders`, { cache: "no-store" }).then(j<BuyerOrders>),

@@ -16,6 +16,10 @@ export const PRODUCT_IMAGES: Record<string, string[]> = {
   prod_normal_mug: ["/products/prod_normal_mug-0.jpg", "/products/prod_normal_mug-1.jpg"],
   prod_gadget_powerbank: ["/products/prod_gadget_powerbank-0.jpg"],
   prod_gadget_earphones: ["/products/prod_gadget_earphones-0.jpg"],
+  // Dead-stock neckband (the catalog-audit removal demo). Shares the earphones photo —
+  // without an entry here it fell through to `${id}.jpg`, which 404s on every page that
+  // renders the catalogue.
+  prod_deadstock_neckband: ["/products/prod_gadget_earphones-0.jpg"],
   prod_beauty_serum: ["/products/prod_beauty_serum-0.jpg", "/products/prod_beauty_serum-1.jpg", "/products/prod_beauty_serum-2.jpg"],
   prod_beauty_lipstick: ["/products/prod_beauty_lipstick-0.jpg"],
   prod_kids_tshirt: ["/products/prod_kids_tshirt-0.jpg", "/products/prod_kids_tshirt-1.jpg", "/products/prod_kids_tshirt-2.jpg", "/products/prod_kids_tshirt-3.jpg"],
