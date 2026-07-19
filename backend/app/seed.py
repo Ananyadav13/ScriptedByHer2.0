@@ -131,6 +131,12 @@ def _seed(db):
                case_count=3, manager_id="mgr_north"),
         Seller(id="seller_mobile", name="SmartWorld Mobiles", rating=3.5,
                account_created_at=_dt(330), trust_flags=[], manager_id="mgr_west"),
+        # repeat-offender seller whose one live product is statistically dead — the
+        # "Run catalog audit -> remove from catalogue" demo. case_count>=3 means the
+        # delisting engine routes any tier-tripping product of theirs to SUSPEND.
+        Seller(id="seller_deadstock", name="ValuePoint Gadgets", rating=1.6,
+               account_created_at=_dt(210), trust_flags=["quality_complaints"],
+               case_count=4, manager_id="mgr_west"),
         # good seller whose bag listing carries a MEASUREMENT gap (not a fraud problem).
         # Under mgr_north so the seller-journey walkthrough shows this seller + EthnicWeave
         # (the kurti) in one manager view.
@@ -232,6 +238,16 @@ def _seed(db):
         Product(id="prod_mobile_case", seller_id="seller_mobile",
                 title="Shockproof Phone Back Cover", brand="SmartWorld", category="electronics",
                 price=199, mrp=249, images=["case.jpg"], fabric_claim=None, status="active"),
+        # DEAD STOCK: still live, but the product simply no longer works for buyers —
+        # ~1.4 trustworthy rating across ~1,550 genuine buyers. Nothing in the LISTING is
+        # wrong (no missing spec, no fabric claim to correct), so there is nothing a
+        # correction window could fix; the complaints are generic dissatisfaction. Its
+        # seller is a repeat offender, so the delisting engine routes the tier trip to
+        # SUSPEND. This is the listing "Run catalog audit" surfaces for removal.
+        Product(id="prod_deadstock_neckband", seller_id="seller_deadstock",
+                title="Bluetooth Neckband 30H (ValuePoint)", brand="ValuePoint",
+                category="electronics", price=349, mrp=499, images=["earphones2.jpg"],
+                fabric_claim=None, status="active"),
         # MEASUREMENT GAP: a genuinely good bag (4.0★, honest seller) sold as "Free Size" with
         # NO dimensions. Buyers can't tell how big it is, so a steady size-complaint minority
         # runs through otherwise-happy reviews ("good quality but small size"). Nothing here is
@@ -385,6 +401,21 @@ def _seed(db):
         reviews.append(Review(id=f"rev_dmg_{i}", product_id="prod_damaged_courier",
                               rating=1, text=dmg_txt[i % 4], created_at=_dt(20 + i % 60),
                               reviewer_account_age_days=300))
+
+    # dead stock: ~1,550 genuine buyers, trustworthy rating ~1.4 -> trips the <2.0/700+ tier.
+    # The wording is deliberately GENERIC dissatisfaction — it avoids every keyword bucket in
+    # services/delisting (no fraud, damage, fabric or size language) so the dominant cluster
+    # is 'other'. That is the point: there is no listing field to correct, so the only honest
+    # outcome is removal from the catalogue.
+    dead_txt = ["Very disappointing purchase, regret buying it",
+                "Poor overall experience, would not buy again",
+                "Battery drains within an hour, basically useless",
+                "Constant connection drops, very frustrating",
+                "Not worth the money at all"]
+    for i in range(1550):
+        reviews.append(Review(id=f"rev_ds_{i}", product_id="prod_deadstock_neckband",
+                              rating=1 if i % 5 < 3 else 2, text=dead_txt[i % 5],
+                              created_at=_dt(3 + i % 70), reviewer_account_age_days=210 + i % 400))
 
     # ---- depth-catalog reviews (varied, established accounts unless noted) ----
     pos = ["Great product, value for money", "Works perfectly, very happy",

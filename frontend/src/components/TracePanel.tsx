@@ -20,23 +20,57 @@ type Phase = "idle" | "running" | "done" | "error";
 const POLL_INTERVAL_MS = 1200;
 const POLL_MAX_ATTEMPTS = 50;
 
-// summarise a deterministic tool result dict into one human line.
+// Field names a judge should never have to read. When a tool result has no prose `reason`,
+// we render these as a sentence instead of dumping `snake_case: value` pairs — the trace is
+// the most-watched surface in the demo, and raw payload keys make deterministic evidence
+// look like debug output rather than a finding.
+const FIELD_PROSE: Record<string, (v: unknown) => string> = {
+  video_review_count: (v) => (Number(v) > 0 ? `${v} video review(s) available to inspect` : "No video reviews on this listing"),
+  total_reviews: (v) => `${Number(v).toLocaleString("en-IN")} reviews analysed`,
+  order_count: (v) => `${Number(v).toLocaleString("en-IN")} orders placed`,
+  trustworthy_review_count: (v) => `${Number(v).toLocaleString("en-IN")} reviews from established accounts`,
+  price_to_mrp_ratio: (v) => `Priced at ${Math.round(Number(v) * 100)}% of MRP`,
+  independent_signal_count: (v) => `${v} independent delivery signal(s)`,
+  mismatch_share: (v) => `${Math.round(Number(v) * 100)}% of compared attributes diverge`,
+};
+
+// Keys that are pure plumbing — never worth showing, even as a fallback.
+const HIDDEN_FIELDS = new Set(["product_id", "order_id", "seller_id", "hub_id", "_cost", "advisory"]);
+
+function humaniseKey(k: string): string {
+  const s = k.replace(/_/g, " ");
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Summarise a deterministic tool result into one human line — prose first, never raw JSON.
 function resultLine(r: unknown): { text: string; flag?: boolean } {
   if (r == null || typeof r !== "object") return { text: String(r ?? "") };
   const o = r as Record<string, unknown>;
   const flag = typeof o.flag === "boolean" ? o.flag : undefined;
+
+  // The deterministic services all return a written `reason` — always prefer it.
   const reason =
     (o.reason as string) ||
     (o.classification as string) ||
     (o.summary as string) ||
     (o.note as string);
   if (reason) return { text: reason, flag };
-  const keys = Object.entries(o)
-    .filter(([, v]) => typeof v !== "object")
-    .slice(0, 4)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(" · ");
-  return { text: keys || "checked", flag };
+
+  // No prose available: build a sentence from known fields rather than dumping keys.
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(o)) {
+    if (HIDDEN_FIELDS.has(k) || v === null || typeof v === "object") continue;
+    const prose = FIELD_PROSE[k];
+    if (prose) {
+      parts.push(prose(v));
+    } else if (typeof v === "boolean") {
+      if (v) parts.push(humaniseKey(k));
+    } else {
+      parts.push(`${humaniseKey(k)}: ${v}`);
+    }
+    if (parts.length >= 3) break;
+  }
+  return { text: parts.join(" · ") || "Checked — nothing unusual found", flag };
 }
 
 export function TracePanel({

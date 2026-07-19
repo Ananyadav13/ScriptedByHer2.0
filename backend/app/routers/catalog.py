@@ -25,6 +25,7 @@ from ..agents import agent2, events
 from ..agents.orchestrator import run_investigation
 from ..db import get_db
 from ..idempotency import log_action_once, notify_once
+from ..logging_config import log_moderation_event
 from ..models import CatalogAction, Investigation, Manager, Product, SizeDrift
 from ..services import delisting, fit_prediction, mandatory_fields, tripwires
 from ..time_utils import utcnow
@@ -151,6 +152,8 @@ def run_audit(body: AuditIn | None = None, db: Session = Depends(get_db)):
 # delivery) and whether it's been escalated to the owning business manager.
 # ---------------------------------------------------------------------------
 _ESCALATED_STATUSES = {"locked", "on_hold", "suspended", "needs_info", "flagged", "correction_window"}
+# statuses that mean the listing is no longer purchasable — a removal has already happened.
+_REMOVED_STATUSES = {"suspended", "delisted"}
 _CLUSTER_ISSUE = {
     "size_issue": ("size_mismatch", "Size / fit mismatch reported"),
     "fabric_mismatch": ("fabric_mismatch", "Fabric not as described"),
@@ -215,18 +218,94 @@ def agent2_findings(db: Session = Depends(get_db)):
 
         out.append({
             "product_id": p.id, "title": p.title, "seller_id": p.seller_id,
+            "seller_name": seller.name if seller else None,
             "category": p.category, "status": p.status,
             "rating": ev["trustworthy_rating"], "review_count": ev["review_count"],
+            "ratings_total": p.ratings_total or 0,
             "manager": manager_name,
             "escalated": p.status in _ESCALATED_STATUSES,
             "issues": issues,
             "fit": fit,
+            # --- delisting verdict (the tiered "this listing no longer works" policy) ---
+            # Surfaced per-product so the console can list dead stock explicitly rather than
+            # only reporting aggregate counts after a sweep.
+            "delist": ev["delist"],
+            "tier_label": ev["tier_label"],
+            "delist_reason": ev["reason"],
+            "dominant_complaint": ev["dominant_label"],
+            "already_removed": p.status in _REMOVED_STATUSES,
             "recommended_action": ev["action"] if ev["delist"] else ("hold" if issues else "keep"),
         })
 
     # products with issues first, most severe complaints first
     out.sort(key=lambda r: (0 if r["issues"] else 1, -len(r["issues"])))
     return {"summary": summary, "count": len(out), "products": out}
+
+
+# ---------------------------------------------------------------------------
+# POST /products/{id}/delist — remove a statistically dead listing from the catalogue
+# ---------------------------------------------------------------------------
+@router.post("/products/{product_id}/delist")
+def delist_product(product_id: str, db: Session = Depends(get_db)):
+    """Apply the delisting verdict for ONE product — the per-listing form of `/audit`.
+
+    `/audit` sweeps the whole catalogue and applies every verdict at once. This is the same
+    engine and the same outcome for a single listing, so the Agent-2 console can present
+    dead stock as a reviewable list with an explicit removal action instead of a bulk job
+    whose effects a judge has to infer from a counter.
+
+    Refuses (409) when the product does not actually trip a delisting tier — removal is a
+    consequence of the evidence, never a free-form button. The tier thresholds live in
+    `services/rules.DELIST_TIERS`; nothing here restates them.
+    """
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(404, f"product {product_id} not found")
+
+    if product.status in _REMOVED_STATUSES:
+        # already off the catalogue — idempotent no-op rather than a second suspension.
+        return {"product_id": product.id, "new_status": product.status, "applied": False,
+                "detail": "listing is already off the catalogue"}
+
+    ev = delisting.evaluate_delisting(product)
+    if not ev["delist"]:
+        raise HTTPException(
+            409,
+            f"{product_id} does not trip a delisting tier — "
+            f"{ev['reason']}. Removal requires the evidence threshold to be met.",
+        )
+
+    seller = product.seller
+    action = ev["action"]
+
+    if action == "logistics_referral":
+        # A delivery fault is the hub's problem: the listing stays live and the seller's
+        # integrity score is untouched. Removing it here would punish the wrong party.
+        raise HTTPException(
+            409,
+            f"{product_id} trips a tier but the dominant complaint is a delivery fault — "
+            f"this is a logistics referral, not a listing removal.",
+        )
+
+    product.status = "suspended" if action == "suspend" else "correction_window"
+    if action == "suspend" and seller:
+        seller.case_count = (seller.case_count or 0) + 1
+    _apply_penalty(seller, ev["seller_penalty"])
+    _log(db, product.id, "suspend" if action == "suspend" else "correction",
+         {"decision": f"delist_{action}", "evidence": [ev["reason"]],
+          "tier": ev["tier_label"], "seller_penalty": ev["seller_penalty"]})
+    _notify(db, "seller",
+            "Listing removed from the catalogue" if action == "suspend"
+            else "Listing in correction window — fix required",
+            f"{product.title}: {ev['reason']}",
+            "immediate" if action == "suspend" else "high", product.id)
+    db.commit()
+
+    log_moderation_event("agent2", f"delist_{action}", product.id,
+                         tier=ev["tier_label"], rating=ev["trustworthy_rating"],
+                         buyers=ev["review_count"])
+    return {"product_id": product.id, "new_status": product.status, "applied": True,
+            "action": action, "tier": ev["tier_label"], "reason": ev["reason"]}
 
 
 # ---------------------------------------------------------------------------

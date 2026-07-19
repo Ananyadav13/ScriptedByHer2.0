@@ -96,12 +96,108 @@ function FindingRow({ p }: { p: Agent2Product }) {
   );
 }
 
+// What each recommended outcome means, in the language the console should speak. Grouping by
+// this is the point of the panel: a fraud cluster, a fixable spec gap and a courier problem
+// are three different problems and must not read as one undifferentiated "bad listing" pile.
+const OUTCOME: Record<string, { title: string; tone: "rose" | "amber" | "teal"; blurb: string; cta: string }> = {
+  suspend: {
+    title: "Remove from catalogue",
+    tone: "rose",
+    blurb: "Consistently poor customer experience with nothing in the listing left to correct.",
+    cta: "Remove from catalogue",
+  },
+  correction_window: {
+    title: "Correction window",
+    tone: "amber",
+    blurb: "The listing itself is fixable — the seller gets a drafted correction to approve.",
+    cta: "Apply correction window",
+  },
+  logistics_referral: {
+    title: "Logistics referral",
+    tone: "teal",
+    blurb: "A delivery fault, not a seller fault. The listing stays live and the seller's rating is untouched.",
+    cta: "Referred to logistics",
+  },
+};
+
+function DelistRow({
+  p,
+  onRemove,
+  busy,
+}: {
+  p: Agent2Product;
+  onRemove: (id: string) => void;
+  busy: boolean;
+}) {
+  const meta = OUTCOME[p.recommended_action] ?? OUTCOME.suspend;
+  // A logistics referral is never a removal — the courier is at fault, not the listing.
+  const removable = !p.already_removed && p.recommended_action !== "logistics_referral";
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link href={`/product/${p.product_id}`} className="font-semibold text-ink hover:text-brand-ink hover:underline">
+            {p.title}
+          </Link>
+          <div className="mt-0.5 text-xs text-ink-faint">
+            {p.seller_name ?? p.seller_id} · {p.category}
+          </div>
+        </div>
+        <Badge tone={meta.tone}>{meta.title}</Badge>
+      </div>
+
+      {/* the evidence, as figures a judge can read at a glance */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-ink-faint">Rating</div>
+          <div className="text-lg font-bold text-rose">★ {p.rating ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-ink-faint">Buyers</div>
+          <div className="text-lg font-bold text-ink tabular-nums">
+            {p.review_count.toLocaleString("en-IN")}
+          </div>
+        </div>
+        {p.tier_label && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-ink-faint">Tier tripped</div>
+            <div className="font-mono text-sm font-semibold text-ink">{p.tier_label}</div>
+          </div>
+        )}
+      </div>
+
+      <p className="mt-3 border-t border-line pt-2.5 text-sm text-ink-soft">
+        <span className="font-medium text-ink">Why: </span>
+        {meta.blurb}
+      </p>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-ink-faint">
+          Recommended: <span className="font-medium text-ink-soft">{meta.title}</span>
+        </span>
+        {p.already_removed ? (
+          <Badge tone="neutral">✓ Already removed</Badge>
+        ) : removable ? (
+          <Button size="sm" variant="danger" disabled={busy} onClick={() => onRemove(p.product_id)}>
+            {busy ? <Spinner /> : meta.cta}
+          </Button>
+        ) : (
+          <Badge tone="teal">Referred to logistics — listing stays live</Badge>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [findings, setFindings] = useState<Agent2Findings | null>(null);
   const [actions, setActions] = useState<AdminAction[]>([]);
   const [audit, setAudit] = useState<AuditResult | null>(null);
   const [filter, setFilter] = useState("all");
   const [running, setRunning] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [removeError, setRemoveError] = useState<string>("");
 
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -126,12 +222,53 @@ export default function AdminPage() {
     }
   };
 
+  const removeListing = async (productId: string) => {
+    setRemoving(productId);
+    setRemoveError("");
+    try {
+      await api.delistProduct(productId);
+      setReloadToken((t) => t + 1);
+    } catch (e) {
+      setRemoveError(e instanceof Error ? e.message : "Removal failed.");
+    } finally {
+      setRemoving(null);
+    }
+  };
+
   const shown = useMemo(() => {
     if (!findings) return [];
     const f = FILTERS.find((x) => x.key === filter)!;
     if (f.types.length === 0) return findings.products.filter((p) => p.issues.length > 0);
     return findings.products.filter((p) => p.issues.some((i) => f.types.includes(i.type)));
   }, [findings, filter]);
+
+  // Listings that trip a delisting tier — the products that no longer work for buyers.
+  // Sorted worst-rated first, and still-live ones ahead of ones already taken down, so the
+  // things that need a decision sit at the top.
+  const deadStock = useMemo(() => {
+    if (!findings) return [];
+    return findings.products
+      .filter((p) => p.delist)
+      .sort((a, b) =>
+        Number(a.already_removed) - Number(b.already_removed) ||
+        (a.rating ?? 9) - (b.rating ?? 9));
+  }, [findings]);
+
+  const liveDeadStock = deadStock.filter((p) => !p.already_removed);
+
+  // "Needs attention" counts only WARN-severity findings (a complaint cluster, a delist
+  // tier) — not the info-severity advisories like "no listing video", which almost every
+  // listing carries. Counting those would report the entire catalogue as unhealthy and say
+  // nothing about which listings actually have a problem.
+  const needsAttention = useMemo(
+    () =>
+      findings
+        ? findings.products.filter(
+            (p) => p.delist || p.issues.some((i) => i.severity === "warn"),
+          ).length
+        : 0,
+    [findings],
+  );
 
   return (
     <Page>
@@ -146,7 +283,32 @@ export default function AdminPage() {
         </Button>
       </div>
 
-      {/* summary tiles */}
+      {/* catalog state at a glance — checked / needs attention / healthy / dead.
+          Answers "what shape is the catalogue in?" before any detail is read. */}
+      {findings && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Card className="p-3 text-center">
+            <div className="text-2xl font-bold text-ink tabular-nums">{findings.count}</div>
+            <div className="text-xs text-ink-faint">Listings checked</div>
+          </Card>
+          <Card className="p-3 text-center">
+            <div className="text-2xl font-bold text-amber tabular-nums">{needsAttention}</div>
+            <div className="text-xs text-ink-faint">Need attention</div>
+          </Card>
+          <Card className="p-3 text-center">
+            <div className="text-2xl font-bold text-rose tabular-nums">{deadStock.length}</div>
+            <div className="text-xs text-ink-faint">No longer viable</div>
+          </Card>
+          <Card className="p-3 text-center">
+            <div className="text-2xl font-bold text-green tabular-nums">
+              {findings.count - needsAttention}
+            </div>
+            <div className="text-xs text-ink-faint">Selling normally</div>
+          </Card>
+        </div>
+      )}
+
+      {/* issue-type breakdown */}
       {findings && (
         <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-5">
           {SUMMARY_TILES.map((t) => (
@@ -164,6 +326,49 @@ export default function AdminPage() {
           {audit.summary.correction_window ?? 0} · logistics {audit.summary.logistics_referral ?? 0} · fix drafts{" "}
           {audit.summary.fix_drafts ?? 0} · kept {audit.summary.kept ?? 0}.
         </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Poor-performing listings — the tiered delisting policy, made visible. */}
+      {/* This is the half of Agent 2 that "removes what can't be fixed": products    */}
+      {/* whose trustworthy rating trips a tier are listed with the evidence that     */}
+      {/* condemned them and an explicit action, rather than being silently swept.    */}
+      {/* ------------------------------------------------------------------ */}
+      {findings && deadStock.length > 0 && (
+        <section className="mb-6">
+          <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="font-semibold text-ink">
+              Poor-performing listings
+              <span className="ml-2 text-sm font-normal text-ink-faint">
+                {liveDeadStock.length} awaiting a decision · {deadStock.length - liveDeadStock.length} already removed
+              </span>
+            </h2>
+            <span className="text-xs text-ink-faint">
+              Tiers: ★&lt;3.0 over 1,000 buyers · ★&lt;2.0 over 700 · ★≤1.0 over 500
+            </span>
+          </div>
+          <p className="mb-3 text-sm text-ink-soft">
+            These listings no longer work for buyers. The rating shown counts only reviews from
+            established accounts, so a fake-review burst cannot rescue a product — or condemn one.
+          </p>
+
+          {removeError && (
+            <div className="mb-3 rounded-xl bg-amber-wash px-3 py-2.5 text-xs text-amber">
+              <b>Could not remove that listing.</b> {removeError}
+            </div>
+          )}
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {deadStock.map((p) => (
+              <DelistRow
+                key={p.product_id}
+                p={p}
+                busy={removing === p.product_id}
+                onRemove={removeListing}
+              />
+            ))}
+          </div>
+        </section>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">

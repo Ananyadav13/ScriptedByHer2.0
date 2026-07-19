@@ -155,11 +155,38 @@ def seller_profile(seller) -> dict:
         "already_banned": bool(seller.banned),
         "classification": "suspicious_new" if new_account else "established",
         "flag": new_account or bool(flags) or repeat_offender,
-        "reason": (
-            f"account {age_days}d old; rating {seller.rating}; "
-            f"cases={seller.case_count or 0} (repeat={repeat_offender}); flags={flags or 'none'}"
-        ),
+        # Written as a sentence, not a field dump: this string is rendered verbatim in the
+        # live agent trace that buyers and business managers watch.
+        "reason": _seller_sentence(seller, age_days, flags, repeat_offender, new_account),
     }
+
+
+_FLAG_PROSE = {
+    "new_account_cluster": "opened alongside a cluster of new accounts",
+    "quality_complaints": "a history of quality complaints",
+}
+
+
+def _seller_sentence(seller, age_days: int, flags: list, repeat_offender: bool,
+                     new_account: bool) -> str:
+    """One plain-English line describing the seller's standing."""
+    age = (f"{age_days // 365} year old" if age_days >= 365
+           else f"{age_days // 30} month old" if age_days >= 60
+           else f"{age_days} day old")
+    standing = "New seller" if new_account else "Established seller"
+    parts = [f"{standing}, {age} account, rated {seller.rating}"]
+
+    cases = seller.case_count or 0
+    if repeat_offender:
+        parts.append(f"{cases} substantiated cases — a repeat offender")
+    elif cases:
+        parts.append(f"{cases} prior case(s)")
+    else:
+        parts.append("no prior policy cases")
+
+    if flags:
+        parts.append(" and ".join(_FLAG_PROSE.get(f, f.replace("_", " ")) for f in flags))
+    return "; ".join(parts) + "."
 
 
 def _product_trust(product) -> tuple[float, int] | None:

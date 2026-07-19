@@ -239,6 +239,21 @@ export const api = {
   resetListingVideo: (product_id: string) =>
     fetch(`${API}/products/${product_id}/listing-video/reset`, { method: "POST" })
       .then(j<{ product_id: string; restored: boolean }>),
+
+  /** Remove one statistically dead listing from the catalogue. The server refuses (409)
+   *  unless the product actually trips a delisting tier, so the error text is worth
+   *  surfacing rather than swallowing. */
+  delistProduct: async (product_id: string) => {
+    const res = await fetch(`${API}/products/${product_id}/delist`, { method: "POST" });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      throw new Error(detail?.detail ?? `Removal failed (${res.status})`);
+    }
+    return res.json() as Promise<{
+      product_id: string; new_status: string; applied: boolean;
+      action?: string; tier?: string; reason?: string;
+    }>;
+  },
 };
 
 export type QualityAttributes = Record<string, string>;
@@ -340,10 +355,18 @@ export type Agent2Product = {
   status: string;
   rating: number | null;
   review_count: number;
+  ratings_total: number;
+  seller_name: string | null;
   manager: string | null;
   escalated: boolean;
   issues: Agent2Issue[];
   fit: { runs: string; delta: number; sample: number; note: string } | null;
+  // the tiered delisting verdict — "this listing no longer works for buyers"
+  delist: boolean;
+  tier_label: string | null;
+  delist_reason: string | null;
+  dominant_complaint: string | null;
+  already_removed: boolean;
   recommended_action: string;
 };
 export type Agent2Findings = {

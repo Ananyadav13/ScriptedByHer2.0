@@ -114,8 +114,12 @@ decision must be one of:
 action must be one of: "lock", "request_qc_video", "route_manager_review", "notify_seller_relabel",
 "notify_support", "hold_listing", "ban_seller", "refund", "standard_process", "route_manual_review",
 "none".
-evidence: a list of concrete findings citing the tool numbers (including the trustworthy rating and,
-when a media scan ran, the observed material vs the claim + its confidence).
+evidence: a list of concrete findings, each a complete plain-English sentence a shopper could
+read (including the trustworthy rating and, when a media scan ran, the observed material vs the
+claim + its confidence). Cite the NUMBERS you relied on, never the tool that produced them —
+write "the seller has no prior policy cases", not "no prior cases (Tool 2)". Never mention
+tools, tool numbers, JSON fields or internal identifiers: this text is shown directly to
+buyers and business managers.
 recommended_action / suggested_remedy: FILL THESE for recommend_review (the action you'd take if
 confirmed, and a one-line remedy for the product manager); leave empty otherwise.
 buyer_explanation: one plain-language sentence a buyer would understand."""
